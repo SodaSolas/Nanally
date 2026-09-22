@@ -1,0 +1,22 @@
+# Build / runtime
+Nanally.exe
+Nanally.new.exe
+Nanally.update.exe
+nanally-apply-update.cmd
+*.pdb
+*.obj
+*.exe.config
+
+# Local caches and pulled content
+logs/
+whathappened/*.log
+.nanally-send/
+wiki~/fetch-raw.json
+wiki~/fetched-check.md
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.vs/
+*.user
+*.suo
