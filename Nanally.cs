@@ -414,8 +414,8 @@ namespace Nanally
 
     static class AppInfo
     {
-        public const string Version = "1.0.0";
-        public const string DisplayVersion = "v1.0.0";
+        public const string Version = "1.0.1";
+        public const string DisplayVersion = "v1.0.1";
         /// <summary>默认更新源：GitHub owner/repo，对应 Releases。</summary>
         public const string DefaultUpdateRepo = "SodaSolas/Nanally";
     }

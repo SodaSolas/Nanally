@@ -99,7 +99,7 @@ lark-cli im +chat-search --query "会话名" --as bot
 
 关于页会检查 GitHub Release（默认仓库 `SodaSolas/Nanally`）。远端版本比本机新时显示「从 GitHub 更新」按钮；否则隐藏。点下去会下载 Release 里的 `Nanally.exe`，退出后由脚本替换并重启。
 
-本地版本号写在 `AppInfo.Version`（当前 `1.0.0`）。发新版时：抬版本 → 编译 → 推代码 → `gh release create vX.Y.Z Nanally.exe`。
+本地版本号写在 `AppInfo.Version`（当前 `1.0.1`）。发新版时：抬版本 → 编译 → 推代码 → `gh release create vX.Y.Z Nanally.exe`。
 
 ## 常见问题
 
