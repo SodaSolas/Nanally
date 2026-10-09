@@ -86,8 +86,8 @@ lark-cli im +chat-search --query "会话名" --as bot
 2. 把 `.apk` 拖进页面，或点「选择 APK」。
 3. 默认只装**顶栏选中**的已授权手机；打开「装到全部已连接手机」则对所有已授权设备**并行**安装。
 4. 开关「先卸载同包名再安装」：开启则用 `aapt` 读包名、卸旧再装；关闭则覆盖安装。默认关闭，写入本地设置。
-5. 传输走 `adb push` + `pm install`（大包通常比单纯 `adb install` 流式通道更稳更快一点）。
-6. 安装页会显示进度条：推送阶段跟 adb 百分比；`pm install` 阶段走不确定进度，并每 1.5s 刷新「已等 Xs」（很多机型此时无输出，不等于卡死；也可能在等手机确认框）。
+5. 开关「用 adb install」：开启则走 `adb install -r -t`；关闭（默认）则走 `adb push` + `pm install`（大包通常更稳更快一点）。写入本地设置。
+6. 安装页会显示进度条：推送 / `adb install` 阶段跟 adb 百分比；`pm install` 阶段走不确定进度，并每 1.5s 刷新「已等 Xs」（很多机型此时无输出，不等于卡死；也可能在等手机确认框）。
 
 需要本机有 `adb`；开启先卸载时还需要 Android SDK `build-tools` 里的 `aapt`。
 
@@ -99,7 +99,7 @@ lark-cli im +chat-search --query "会话名" --as bot
 
 关于页会检查 GitHub Release（默认仓库 `SodaSolas/Nanally`）。远端版本比本机新时显示「从 GitHub 更新」按钮；否则隐藏。点下去会下载 Release 里的 `Nanally.exe`，退出后由脚本替换并重启。
 
-本地版本号写在 `AppInfo.Version`（当前 `1.0.1`）。发新版时：抬版本 → 编译 → 推代码 → `gh release create vX.Y.Z Nanally.exe`。
+本地版本号写在 `AppInfo.Version`（当前 `1.0.2`）。发新版时：抬版本 → 编译 → 推代码 → `gh release create vX.Y.Z Nanally.exe`。
 
 ## 常见问题
 

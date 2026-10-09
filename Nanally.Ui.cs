@@ -55,6 +55,7 @@ namespace Nanally
         public bool SidebarExpanded = true;
         public bool ApkUninstallFirst;
         public bool ApkInstallAllDevices;
+        public bool ApkUseAdbInstall;
 
         public bool ResolvedDark()
         {
@@ -91,6 +92,7 @@ namespace Nanally
                 s.SidebarExpanded = Read(text, "SidebarExpanded") != "false";
                 s.ApkUninstallFirst = Read(text, "ApkUninstallFirst") == "true";
                 s.ApkInstallAllDevices = Read(text, "ApkInstallAllDevices") == "true";
+                s.ApkUseAdbInstall = Read(text, "ApkUseAdbInstall") == "true";
             }
             catch { }
             return s;
@@ -112,7 +114,8 @@ namespace Nanally
                 + "\"EnableGlass\":\"" + (EnableGlass ? "true" : "false") + "\","
                 + "\"SidebarExpanded\":\"" + (SidebarExpanded ? "true" : "false") + "\","
                 + "\"ApkUninstallFirst\":\"" + (ApkUninstallFirst ? "true" : "false") + "\","
-                + "\"ApkInstallAllDevices\":\"" + (ApkInstallAllDevices ? "true" : "false") + "\""
+                + "\"ApkInstallAllDevices\":\"" + (ApkInstallAllDevices ? "true" : "false") + "\","
+                + "\"ApkUseAdbInstall\":\"" + (ApkUseAdbInstall ? "true" : "false") + "\""
                 + "}";
             File.WriteAllText(FilePath(), json, Encoding.UTF8);
         }
@@ -654,12 +657,11 @@ namespace Nanally
             var bar = new Border
             {
                 Margin = new Thickness(12, 10, 12, 0),
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14),
                 Padding = new Thickness(12, 8, 12, 8)
             };
             Theme.BindElement(bar, BackgroundProperty, "nn.Card");
-            Theme.BindElement(bar, Border.BorderBrushProperty, "nn.Hairline");
             ClipRound(bar, 14);
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -669,7 +671,7 @@ namespace Nanally
             deviceCard = new Border
             {
                 CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 Padding = new Thickness(10, 4, 10, 4),
                 MinHeight = 32,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -677,7 +679,6 @@ namespace Nanally
                 Child = deviceHost
             };
             Theme.BindElement(deviceCard, BackgroundProperty, "nn.Field");
-            Theme.BindElement(deviceCard, Border.BorderBrushProperty, "nn.Hairline");
             row.Children.Add(deviceCard);
             refreshText = new TextBlock
             {
@@ -720,6 +721,11 @@ namespace Nanally
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            chkApkUseAdbInstall = IosSwitch();
+            chkApkUseAdbInstall.IsChecked = settings.ApkUseAdbInstall;
+            chkApkUseAdbInstall.Checked += delegate { OnApkUseAdbInstallToggled(); };
+            chkApkUseAdbInstall.Unchecked += delegate { OnApkUseAdbInstallToggled(); };
+            bar.Children.Add(ApkOption("用 adb install", chkApkUseAdbInstall));
             chkApkUninstall = IosSwitch();
             chkApkUninstall.IsChecked = settings.ApkUninstallFirst;
             chkApkUninstall.Checked += delegate { OnApkUninstallToggled(); };
@@ -893,14 +899,13 @@ namespace Nanally
             {
                 MinHeight = 72,
                 CornerRadius = new CornerRadius(10),
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 Padding = new Thickness(12),
                 AllowDrop = true,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(0, 0, 0, 8)
             };
             Theme.BindElement(drop, BackgroundProperty, "nn.Field");
-            Theme.BindElement(drop, Border.BorderBrushProperty, "nn.Hairline");
             drop.DragOver += OnApkDragOver;
             drop.Drop += OnApkDrop;
             drop.MouseLeftButtonUp += delegate
@@ -986,6 +991,14 @@ namespace Nanally
             if (applyingTheme || chkApkInstallAll == null)
                 return;
             settings.ApkInstallAllDevices = chkApkInstallAll.IsChecked == true;
+            settings.Save();
+        }
+
+        void OnApkUseAdbInstallToggled()
+        {
+            if (applyingTheme || chkApkUseAdbInstall == null)
+                return;
+            settings.ApkUseAdbInstall = chkApkUseAdbInstall.IsChecked == true;
             settings.Save();
         }
 
@@ -1154,6 +1167,7 @@ namespace Nanally
             }
 
             var uninstallFirst = settings.ApkUninstallFirst;
+            var useAdbInstall = settings.ApkUseAdbInstall;
             var adb = adbExe;
             var paths = new List<string>(apkPaths);
             var parallel = ready.Count > 1;
@@ -1164,7 +1178,8 @@ namespace Nanally
             WhatHappened.Info("安装 APK 开始 files=" + paths.Count.ToString(CultureInfo.InvariantCulture)
                 + " devices=" + ready.Count.ToString(CultureInfo.InvariantCulture)
                 + " uninstallFirst=" + (uninstallFirst ? "1" : "0")
-                + " allDevices=" + (settings.ApkInstallAllDevices ? "1" : "0"));
+                + " allDevices=" + (settings.ApkInstallAllDevices ? "1" : "0")
+                + " useAdbInstall=" + (useAdbInstall ? "1" : "0"));
             ShowApkProgress(null, 1, false);
             SetStatus("正在安装到 " + ready.Count.ToString(CultureInfo.InvariantCulture) + " 台手机…", Theme.Label);
 
@@ -1238,7 +1253,8 @@ namespace Nanally
                     {
                         AppendApkLog("开始 " + fileName + (string.IsNullOrEmpty(pkg) ? "" : "（" + pkg + "）")
                             + " → " + deviceCount.ToString(CultureInfo.InvariantCulture) + " 台"
-                            + (deviceCount > 1 ? "（并行推送）" : ""), Theme.Ink);
+                            + (deviceCount > 1 ? "（并行）" : "")
+                            + " · " + (useAdbInstall ? "adb install" : "push + pm"), Theme.Ink);
                         ShowApkProgress(null, 5, false);
                     }));
 
@@ -1250,9 +1266,10 @@ namespace Nanally
                         var uninstall = uninstallFirst;
                         var package = pkg;
                         var report = setDeviceProg;
+                        var adbMode = useAdbInstall;
                         tasks.Add(Task.Factory.StartNew(delegate
                         {
-                            RunInstallOnDevice(adb, target, apk, uninstall, package, counts, countLock, parallel, report);
+                            RunInstallOnDevice(adb, target, apk, uninstall, package, counts, countLock, parallel, report, adbMode);
                         }));
                     }
                     try { Task.WaitAll(tasks.ToArray()); }
@@ -1286,11 +1303,11 @@ namespace Nanally
             });
         }
 
-        void RunInstallOnDevice(string adb, DeviceInfo device, string apkPath, bool uninstallFirst, string packageName, int[] counts, object countLock, bool parallel, Action<string, double> reportProgress)
+        void RunInstallOnDevice(string adb, DeviceInfo device, string apkPath, bool uninstallFirst, string packageName, int[] counts, object countLock, bool parallel, Action<string, double> reportProgress, bool useAdbInstall)
         {
             var label = device.DisplayName + " [" + device.Serial + "]";
             var serial = device.Serial;
-            var phase = "push";
+            var phase = useAdbInstall ? "install" : "push";
             var lastPct = -1;
             var lastUi = DateTime.UtcNow;
             var phaseStarted = DateTime.UtcNow;
@@ -1321,12 +1338,14 @@ namespace Nanally
                 }
                 else if (string.Equals(phase, "install", StringComparison.Ordinal))
                 {
-                    bump(88);
+                    bump(useAdbInstall && lastPct >= 0 ? (10 + lastPct * 0.8) : 88);
                     if (!parallel)
                     {
                         Dispatcher.BeginInvoke(new Action(delegate
                         {
-                            SetStatus(label + " 等待 pm install / 手机确认…已等 " + sec.ToString(CultureInfo.InvariantCulture) + "s", Theme.Label);
+                            var waitLabel = useAdbInstall ? "等待 adb install / 手机确认…" : "等待 pm install / 手机确认…";
+                            SetStatus(label + " " + waitLabel + "已等 " + sec.ToString(CultureInfo.InvariantCulture) + "s"
+                                + (useAdbInstall && lastPct >= 0 ? "（" + lastPct.ToString(CultureInfo.InvariantCulture) + "%）" : ""), Theme.Label);
                         }));
                     }
                 }
@@ -1338,22 +1357,25 @@ namespace Nanally
                     return;
                 var text = line.Trim();
                 var pct = Adb.TryParsePercent(text);
-                if (pct >= 0 && string.Equals(phase, "push", StringComparison.Ordinal))
+                var progressPhase = string.Equals(phase, "push", StringComparison.Ordinal)
+                    || (useAdbInstall && string.Equals(phase, "install", StringComparison.Ordinal));
+                if (pct >= 0 && progressPhase)
                 {
                     var now = DateTime.UtcNow;
                     if (pct > lastPct && (pct >= lastPct + 2 || (now - lastUi).TotalMilliseconds >= 350 || pct == 100))
                     {
                         lastPct = pct;
                         lastUi = now;
-                        var mapped = 10 + pct * 0.65;
+                        var mapped = useAdbInstall ? (10 + pct * 0.8) : (10 + pct * 0.65);
                         bump(mapped);
                         Dispatcher.BeginInvoke(new Action(delegate
                         {
-                            SetStatus(label + " 推送 " + pct.ToString(CultureInfo.InvariantCulture) + "%", Theme.Label);
+                            var verb = useAdbInstall ? "安装" : "推送";
+                            SetStatus(label + " " + verb + " " + pct.ToString(CultureInfo.InvariantCulture) + "%", Theme.Label);
                             if (pct >= apkLastLoggedPercent + 10 || pct == 100)
                             {
                                 apkLastLoggedPercent = pct;
-                                AppendApkLog(label + " · 推送 " + pct.ToString(CultureInfo.InvariantCulture) + "%", Theme.Label);
+                                AppendApkLog(label + " · " + verb + " " + pct.ToString(CultureInfo.InvariantCulture) + "%", Theme.Label);
                             }
                         }));
                     }
@@ -1380,12 +1402,21 @@ namespace Nanally
                 }
                 else if (string.Equals(phase, "install", StringComparison.Ordinal))
                 {
-                    bump(85);
+                    bump(useAdbInstall ? 10 : 85);
                     Dispatcher.BeginInvoke(new Action(delegate
                     {
-                        AppendApkLog(label + " · 推送完成，开始 pm install（无输出时看手机确认框）", Theme.Ink);
-                        if (!parallel)
-                            SetStatus(label + " pm install 中…", Theme.Label);
+                        if (useAdbInstall)
+                        {
+                            AppendApkLog(label + " · 开始 adb install（无输出时看手机确认框）", Theme.Ink);
+                            if (!parallel)
+                                SetStatus(label + " adb install 中…", Theme.Label);
+                        }
+                        else
+                        {
+                            AppendApkLog(label + " · 推送完成，开始 pm install（无输出时看手机确认框）", Theme.Ink);
+                            if (!parallel)
+                                SetStatus(label + " pm install 中…", Theme.Label);
+                        }
                     }));
                 }
             };
@@ -1397,7 +1428,7 @@ namespace Nanally
                 bump(4);
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
-                    AppendApkLog(label + " · 开始（push + pm install）", Theme.Ink);
+                    AppendApkLog(label + " · 开始（" + (useAdbInstall ? "adb install" : "push + pm install") + "）", Theme.Ink);
                     if (!parallel)
                         SetStatus("正在安装到 " + label + "…", Theme.Label);
                 }));
@@ -1423,7 +1454,7 @@ namespace Nanally
                     }
                 }
 
-                var installed = Apk.Install(adb, device.Serial, apkPath, !uninstallFirst, onAdbLine, onPhase);
+                var installed = Apk.Install(adb, device.Serial, apkPath, !uninstallFirst, onAdbLine, onPhase, useAdbInstall);
                 if (installed.TimedOut)
                 {
                     lock (countLock) { counts[1]++; }
@@ -1477,11 +1508,10 @@ namespace Nanally
         {
             var card = new Border
             {
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14)
             };
             Theme.BindElement(card, BackgroundProperty, "nn.Card");
-            Theme.BindElement(card, Border.BorderBrushProperty, "nn.Hairline");
             ClipRound(card, 14);
             return card;
         }
@@ -1555,12 +1585,11 @@ namespace Nanally
             var footer = new Border
             {
                 Margin = new Thickness(12, 0, 12, 10),
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14),
                 Padding = new Thickness(16, 10, 16, 12)
             };
             Theme.BindElement(footer, BackgroundProperty, "nn.Card");
-            Theme.BindElement(footer, Border.BorderBrushProperty, "nn.Hairline");
             ClipRound(footer, 14);
             var stack = new StackPanel();
 
@@ -2831,11 +2860,11 @@ namespace Nanally
         {
             if (string.IsNullOrEmpty(localVideo) || string.IsNullOrEmpty(coverPath))
                 return false;
-            if (ExtractVideoFrame(localVideo, coverPath) && File.Exists(coverPath))
+            if (ExtractVideoFrame(localVideo, coverPath, true) && File.Exists(coverPath))
                 return true;
             try
             {
-                var shot = ShellThumb(localVideo, 360, 200);
+                var shot = ShellThumb(localVideo, 2560, 2560, 0x81);
                 if (shot == null)
                     return false;
                 SaveJpeg(shot, coverPath);
@@ -2986,12 +3015,11 @@ namespace Nanally
 
             settingsNavCard = new Border
             {
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14),
                 Padding = new Thickness(6)
             };
             Theme.BindElement(settingsNavCard, BackgroundProperty, "nn.Card");
-            Theme.BindElement(settingsNavCard, Border.BorderBrushProperty, "nn.Hairline");
             ClipRound(settingsNavCard, 14);
             var navStack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
             btnSetLook = SettingsNav("外观", true);
@@ -3018,11 +3046,10 @@ namespace Nanally
 
             settingsContentCard = new Border
             {
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14)
             };
             Theme.BindElement(settingsContentCard, BackgroundProperty, "nn.Card");
-            Theme.BindElement(settingsContentCard, Border.BorderBrushProperty, "nn.Hairline");
             ClipRound(settingsContentCard, 14);
             var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(22) };
             var host = new Grid();
@@ -3209,9 +3236,7 @@ namespace Nanally
             Theme.BindElement(shellSidebar, BackgroundProperty, "nn.Sidebar");
             Theme.BindElement(shellSidebar, Border.BorderBrushProperty, "nn.Hairline");
             Theme.BindElement(settingsNavCard, BackgroundProperty, "nn.Card");
-            Theme.BindElement(settingsNavCard, Border.BorderBrushProperty, "nn.Hairline");
             Theme.BindElement(settingsContentCard, BackgroundProperty, "nn.Card");
-            Theme.BindElement(settingsContentCard, Border.BorderBrushProperty, "nn.Hairline");
             ApplyWindowChrome();
             ApplyChromeLook();
             PaintNav(tabLogs, currentPage == "logs");
@@ -3262,25 +3287,16 @@ namespace Nanally
             {
                 var bar = deviceBar as Border;
                 if (bar != null)
-                {
                     Theme.BindElement(bar, BackgroundProperty, "nn.Card");
-                    Theme.BindElement(bar, Border.BorderBrushProperty, "nn.Hairline");
-                }
             }
             if (actionFooter != null)
             {
                 var foot = actionFooter as Border;
                 if (foot != null)
-                {
                     Theme.BindElement(foot, BackgroundProperty, "nn.Card");
-                    Theme.BindElement(foot, Border.BorderBrushProperty, "nn.Hairline");
-                }
             }
             if (deviceCard != null)
-            {
                 Theme.BindElement(deviceCard, BackgroundProperty, "nn.Field");
-                Theme.BindElement(deviceCard, Border.BorderBrushProperty, "nn.Hairline");
-            }
             settings.Save();
         }
 
@@ -3291,6 +3307,7 @@ namespace Nanally
             RestyleSwitch(chkGlass);
             RestyleSwitch(chkApkUninstall);
             RestyleSwitch(chkApkInstallAll);
+            RestyleSwitch(chkApkUseAdbInstall);
         }
 
         void RestyleSwitch(CheckBox box)
@@ -3975,19 +3992,25 @@ namespace Nanally
 
         static bool ExtractVideoFrame(string video, string jpg)
         {
+            return ExtractVideoFrame(video, jpg, false);
+        }
+
+        static bool ExtractVideoFrame(string video, string jpg, bool nativeSize)
+        {
             var ffmpeg = FindFfmpeg();
             if (ffmpeg == null)
                 return false;
-            if (RunFfmpeg(ffmpeg, video, jpg, "1"))
+            if (RunFfmpeg(ffmpeg, video, jpg, "1", nativeSize))
                 return File.Exists(jpg);
-            return RunFfmpeg(ffmpeg, video, jpg, "0") && File.Exists(jpg);
+            return RunFfmpeg(ffmpeg, video, jpg, "0", nativeSize) && File.Exists(jpg);
         }
 
-        static bool RunFfmpeg(string ffmpeg, string video, string jpg, string seconds)
+        static bool RunFfmpeg(string ffmpeg, string video, string jpg, string seconds, bool nativeSize)
         {
+            var vf = nativeSize ? "" : " -vf scale=360:-2";
             var psi = new ProcessStartInfo();
             psi.FileName = ffmpeg;
-            psi.Arguments = "-y -ss " + seconds + " -i \"" + video + "\" -frames:v 1 -vf scale=360:-2 \"" + jpg + "\"";
+            psi.Arguments = "-y -ss " + seconds + " -i \"" + video + "\" -frames:v 1" + vf + " -q:v 3 \"" + jpg + "\"";
             psi.CreateNoWindow = true;
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
@@ -4097,15 +4120,20 @@ namespace Nanally
 
         BitmapSource ShellThumb(string path, int width, int height)
         {
+            return ShellThumb(path, width, height, 0x1);
+        }
+
+        BitmapSource ShellThumb(string path, int width, int height, int flags)
+        {
             BitmapSource shot = null;
             Dispatcher.Invoke(new Action(delegate
             {
-                shot = TryShellThumb(path, width, height);
+                shot = TryShellThumb(path, width, height, flags);
             }));
             return shot;
         }
 
-        static BitmapSource TryShellThumb(string path, int width, int height)
+        static BitmapSource TryShellThumb(string path, int width, int height, int flags)
         {
             try
             {
@@ -4114,7 +4142,7 @@ namespace Nanally
                 ThumbNative.SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out factory);
                 var size = new ThumbSize { cx = width, cy = height };
                 IntPtr hbmp;
-                var hr = factory.GetImage(size, 0x1, out hbmp);
+                var hr = factory.GetImage(size, flags, out hbmp);
                 if (hr != 0 || hbmp == IntPtr.Zero)
                     return null;
                 try
@@ -4241,8 +4269,7 @@ namespace Nanally
                 Width = 760,
                 Height = 520,
                 Background = Theme.Card,
-                BorderBrush = Theme.Hairline,
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(12),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center

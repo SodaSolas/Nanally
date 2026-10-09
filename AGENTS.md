@@ -47,7 +47,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 | `%LocalAppData%\Nanally\preview` | 缩略图缓存 |
 | `.nanally-send\` | 发送前的临时拉取目录，发完删 |
 
-`AppSettings` 字段：`LogsDir`、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Blue`；Pink/Blue/Green）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）。浅色色板按 `D:\tools\GlassWidgetStyle\README.md`（半透明白卡片、冰蓝强调）。空的会话 ID 保持空，不会回填，也不会去飞书查询。
+`AppSettings` 字段：`LogsDir`、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Blue`；Pink/Blue/Green）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）、`ApkUseAdbInstall`（默认 false；true 时走 `adb install -r -t`，false 时走 push+pm）。浅色色板按 `D:\tools\GlassWidgetStyle\README.md`（半透明白卡片、冰蓝强调）。空的会话 ID 保持空，不会回填，也不会去飞书查询。
 
 ## 界面
 
@@ -59,7 +59,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 
 - 提取日志：上级、路径框、浏览、刷新
 - 截图录屏：全部/截图/录屏、读取设备、全选、计数
-- 安装 APK：拖放 / 选择文件；默认只装顶栏选中设备；「装到全部」时并行 push+pm install；页内开关「先卸载同包名再安装」；安装过程有进度条（push 百分比 + pm install 心跳）
+- 安装 APK：拖放 / 选择文件；默认只装顶栏选中设备；「装到全部」时并行安装；页内开关「先卸载同包名再安装」「用 adb install」（关=push+pm，开=adb install）；安装过程有进度条（百分比 + 心跳）
 - 切页用 `ShowNav` 切换 `logsTools` / `mediaTools` 的可见性，不要再给页面自己加第二行工具条
 
 底栏：状态在上，主按钮在下。日志页是「拷贝日志」，媒体页是发送。安装 APK 页右下角是进度条 + 百分比。
@@ -127,6 +127,8 @@ im +messages-send --as bot --chat-id "<会话>" --video "<视频>" --video-cover
 ```
 
 图片用 `--image`。视频必须用 `--video` + `--video-cover`（先 ffmpeg / Shell 抽帧成 jpg）；**不要**把 mp4 当 `--file` 发，飞书会报 type of file upload does not match。封面与视频放同一工作目录。已有 `LocalPath` 缓存就直接拷，否则再 `adb pull`。视频发送超时 10 分钟。
+
+发给飞书的封面必须是视频原始分辨率（`ExtractVideoFrame(..., nativeSize: true)`），不要 `scale=360`。飞书播放器按封面像素摆画面，封面被缩小后，正片会缩在黑色播放器中间。列表缩略图仍可缩到 360。
 
 `lark-cli` 查找：PATH 里的 `lark-cli.exe` / `lark-cli.cmd`，否则 `%LocalAppData%\hermes\node\node.exe` + `node_modules\@larksuite\cli\scripts\run.js`。Hermes 不用开着。找不到时提示安装，不会自动下载安装包。
 

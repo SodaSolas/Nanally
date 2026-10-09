@@ -414,8 +414,8 @@ namespace Nanally
 
     static class AppInfo
     {
-        public const string Version = "1.0.1";
-        public const string DisplayVersion = "v1.0.1";
+        public const string Version = "1.0.2";
+        public const string DisplayVersion = "v1.0.2";
         /// <summary>默认更新源：GitHub owner/repo，对应 Releases。</summary>
         public const string DefaultUpdateRepo = "SodaSolas/Nanally";
     }
@@ -1354,15 +1354,29 @@ namespace Nanally
 
         public static AdbResult Install(string adb, string serial, string apkPath, bool replaceExisting, Action<string> onLine)
         {
-            return Install(adb, serial, apkPath, replaceExisting, onLine, null);
+            return Install(adb, serial, apkPath, replaceExisting, onLine, null, false);
         }
 
         public static AdbResult Install(string adb, string serial, string apkPath, bool replaceExisting, Action<string> onLine, Action<string> onPhase)
         {
+            return Install(adb, serial, apkPath, replaceExisting, onLine, onPhase, false);
+        }
+
+        public static AdbResult Install(string adb, string serial, string apkPath, bool replaceExisting, Action<string> onLine, Action<string> onPhase, bool useAdbInstall)
+        {
+            var quoted = "\"" + apkPath.Replace("\"", "") + "\"";
+            var flags = "-r -t ";
+            if (useAdbInstall)
+            {
+                // 直接走 adb install 流式通道；适合对照 push+pm，或个别机型 pm 路径异常时切换。
+                if (onPhase != null)
+                    onPhase("install");
+                return Adb.Run(adb, serial, "install " + flags + quoted, 600000, null, onLine);
+            }
+
             // push + pm install：大包在不少机型上比 adb install 流式通道更快，也方便并行时各写各的临时文件。
             var safeSerial = (serial ?? "device").Replace(":", "_").Replace("\"", "");
             var remote = "/data/local/tmp/nanally_" + safeSerial + ".apk";
-            var quoted = "\"" + apkPath.Replace("\"", "") + "\"";
             if (onPhase != null)
                 onPhase("push");
             var push = Adb.Run(adb, serial, "push " + quoted + " " + remote, 600000, null, onLine);
@@ -1370,7 +1384,6 @@ namespace Nanally
                 return push;
             if (onPhase != null)
                 onPhase("install");
-            var flags = "-r -t ";
             var installed = Adb.Run(adb, serial, "shell pm install " + flags + remote, 300000, null, onLine);
             Adb.Run(adb, serial, "shell rm -f " + remote, 15000, null, null);
             return installed;
@@ -1503,6 +1516,7 @@ namespace Nanally
         CheckBox chkGlass;
         CheckBox chkApkUninstall;
         CheckBox chkApkInstallAll;
+        CheckBox chkApkUseAdbInstall;
         ComboBox cmbAccent;
         Button btnSetLook;
         Button btnSetPath;
@@ -1819,8 +1833,7 @@ namespace Nanally
             {
                 Background = Theme.Card,
                 CornerRadius = new CornerRadius(16),
-                BorderBrush = Theme.Hairline,
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 Padding = new Thickness(14, 12, 14, 12),
                 Child = child
             };
@@ -2025,8 +2038,6 @@ namespace Nanally
 
             selected = PickDevice(preferSerial);
             var multi = devices.Count > 1;
-            if (deviceCard != null)
-                deviceCard.BorderBrush = Theme.Hairline;
             var face = BuildDeviceFace(selected, multi);
             if (multi)
             {
@@ -2155,8 +2166,7 @@ namespace Nanally
             {
                 Background = Theme.Card,
                 CornerRadius = new CornerRadius(8),
-                BorderBrush = Theme.Hairline,
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(0),
                 Padding = new Thickness(4),
                 Margin = new Thickness(0, 4, 0, 0),
                 Child = scroller,
@@ -2172,8 +2182,6 @@ namespace Nanally
             devicePopup.Width = deviceCard.ActualWidth > 0 ? deviceCard.ActualWidth : 300;
                 if (chevronText != null)
                     chevronText.Text = "\uE70E";
-                if (deviceCard != null)
-                    deviceCard.BorderBrush = Theme.Pink;
             devicePopup.IsOpen = true;
         }
 
@@ -2269,8 +2277,6 @@ namespace Nanally
                 popupClosedAt = DateTime.UtcNow;
                 if (chevronText != null)
                     chevronText.Text = "\uE70D";
-                if (deviceCard != null)
-                    deviceCard.BorderBrush = Theme.Hairline;
             };
         }
 
