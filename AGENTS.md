@@ -53,18 +53,20 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 
 窗口约 1100×720，`WindowStyle=None`，可缩放。`WindowChrome` 标题高 36，标题栏要能拖；放进标题栏的按钮必须 `WindowChrome.SetIsHitTestVisibleInChrome`。标题栏背景为 null 时点不中，拖不动。
 
-侧栏是图标轨，不是粉胶囊包住「图标+文字」。选中只染 40×40、圆角 10 的图标方块。展开后文字在方块右边，左对齐（`LeftButtonTemplate`）。收起宽 64，展开宽 176。关于页头像也落在同一条 40 宽的列里。
+侧栏是图标轨，不是粉胶囊包住「图标+文字」。选中只染 40×40、圆角 10 的图标方块。展开后文字在方块右边，左对齐（`LeftButtonTemplate`）。收起宽 64，展开宽 176。关于页头像也落在同一条 40 宽的列里。侧栏图标是 20×20 网格上的描边 Path（`IconSidebar/IconLogs/IconMedia/IconApk/IconSettings` + `StrokeIcon`），按轮廓区分：侧栏面板 / 文档 / 图片 / 下载到托盘 / 滑杆。不要换回 MDL2 字形（四个方块看不出区别）。侧栏版本号读 `AppInfo.DisplayVersion`。
 
-顶栏只有一行：设备卡（名字和「已连接 · USB」左右并排）｜刷新设备｜当前页工具。
+顶栏只有一行，没有底卡：设备胶囊（绿点 + 名字 + `USB` / 橙色「未授权」）｜刷新图标按钮｜当前页工具。图标按钮统一用 `IconButton`（32×32，MDL2 字形）。
 
 - 提取日志：上级、路径框、浏览、刷新
 - 截图录屏：全部/截图/录屏、读取设备、全选、计数
-- 安装 APK：拖放 / 选择文件；默认只装顶栏选中设备；「装到全部」时并行安装；页内开关「先卸载同包名再安装」「用 adb install」（关=push+pm，开=adb install）；安装过程有进度条（百分比 + 心跳）
+- 提取日志：上级图标、面包屑路径（点段跳转，点空白处切成 `logsPathBox` 输入，Enter 应用 / Esc 取消）、选择目录图标
+- 截图录屏：全部 / 截图 / 录屏分段按钮（带数量，`mediaFilterIndex`）、重新读取图标、全选 / 取消全选；左侧只在生成缩略图时显示进度
+- 安装 APK：顶栏只显示「已连接 N 台」；拖放区、三个开关（带一行说明）、当前 APK 卡片、每台手机一行进度（`ApkRow` / `UpdateApkRow` / `RowText`）都在页内；详细日志默认收起
 - 切页用 `ShowNav` 切换 `logsTools` / `mediaTools` 的可见性，不要再给页面自己加第二行工具条
 
-底栏：状态在上，主按钮在下。日志页是「拷贝日志」，媒体页是发送。安装 APK 页右下角是进度条 + 百分比。
+底栏：只在提取日志页、安装 APK 页显示，一行，状态在左、按钮在右（APK 页没有按钮）。截图录屏页没有底栏：勾选后底部浮出操作条（已选数量 · 大小 ｜ 取消 ｜ 发给自己（N）），`SetStatus` 会镜像到操作条第二行。总进度条 `apkProgressHost` 保留但不再显示。
 
-设置内页：外观 / 目录 / 飞书。左侧页签已标明分类，右侧**不要**再加「外观 / 目录 / 飞书」大标题（`SectionTitle` 已删）。选中项是通栏粉底、文字左对齐（宽度锁成 `nav.ActualWidth - 16`）。开关 `HorizontalAlignment=Left`，不要靠右。
+设置内页：外观 / 目录 / 飞书。左侧页签已标明分类，右侧**不要**再加「外观 / 目录 / 飞书」大标题（`SectionTitle` 已删）。页签未选中透明，选中是强调色淡底 + 左侧 3px 竖条（`PaintSettingsNav`，宽度锁成 `nav.ActualWidth - 16`）。开关 `HorizontalAlignment=Left`，不要靠右；`SwitchRow` 里开关在左、标题和说明在右。主题色是三个色块（`AccentSwatch`），不是下拉。目录页同时列出 `whathappened\`。飞书页顶部三格状态（lark-cli / 机器人 / 用户登录，进入页面时跑一次 `auth status --json`），会话 ID 说明收在可折叠区块里。Token 框用 `PasswordTemplate`（和其他输入框同样圆角）。
 
 滚动条是全局隐式样式，在 `Theme.InstallScrollBars`。跟 Linko 一样：宽 8、圆角、没有箭头。槽用 `CardSoft`，滑块用 `Thumb`（深色 `#3C3C3C`，浅色 `#99A0B0C0`），悬停 `Label`，拖动跟随强调色。不要改回系统白条。模板用 `DynamicResource`，不要把共享刷子塞进 Setter，否则一切换主题又会冻住。
 
@@ -87,7 +89,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 
 落点必须是「用户选的 logs 根」下面的 `{SafeName(设备名)}+{yyyy-MM-dd_HH-mm-ss}`。禁止在工具根建这个文件夹，禁止把文件平铺进 logs 根。logs 根拷贝前不清空。同名则加 `_2`。
 
-底栏「拷贝日志」左边是「打开文件夹」。打开路径栏当前目录（`logsPathBox`，不行再 `logsBrowsePath`，再不行 `LogsDir`）。只在提取日志页显示。拷贝成功后不再弹出「打开文件夹 / 打开目录」那一行。
+底栏「拷贝日志」左边是「打开文件夹」。打开路径栏当前目录（`logsPathBox`，不行再 `logsBrowsePath`，再不行 `LogsDir`）。只在提取日志页显示。拷贝成功后不再弹出「打开文件夹 / 打开目录」那一行；列表停在 logs 根，新快照那一行高亮并标「刚刚」（`logsHighlight`）。列表按修改时间从新到旧；「设备名+时间」文件夹拆成两段显示，大小和文件数在后台算，只统计匹配 `SnapshotPattern` 的目录（浏览到盘根时不会递归整盘）。
 
 设备名顺序：`settings get global device_name`，否则 `ro.product.marketname`，否则 `ro.product.model`。多台时自定义下拉（MDL2 `E70D`/`E70E`），250ms 防连开关。状态不要再重复模型号。
 
@@ -101,7 +103,7 @@ adb 查找顺序：正在跑的 `adb.exe` → 环境变量 `ADB` → PATH → `A
 
 扫描根在 `MediaRoots`。列表按修改时间从新到旧（`DateTicks`，必要时从文件名猜时间）。切设备或进入截图录屏页会自动 `RefreshMediaAsync`。
 
-单击切换勾选，双击开预览（图放大，视频 `MediaElement`）。提示：类型 / 大小 / 修改日期。左上角是 12px 圆点，不要用系统白方块勾选框。未选是半透明黑底加浅色环，选中填强调色。缩略图：先 adb pull，图用 `System.Drawing` 缩小，视频用 PATH 上的 ffmpeg 抽帧，再不行用 Shell `IShellItemImageFactory`。
+网格按月分组，相邻稀疏月份合并成一段（每段至少 4 项）。缩略图框 20:9、`UniformToFill`，列数按宽度算（`FitMediaTiles`，最小 176）。下面一行是「时间 · 大小」，完整文件名在提示里。选中是强调色描边环。单击切换勾选，双击开预览（窗口内浮层：← → 切换、空格勾选、Esc 关闭，可以直接发送）。提示：名称 / 类型 / 大小 / 修改日期。左上角是 12px 圆点，不要用系统白方块勾选框。没手机 / 未授权 / 没 adb / 没文件时显示大号空状态（`UpdateMediaEmpty`）。未选是半透明黑底加浅色环，选中填强调色。缩略图：先 adb pull，图用 `System.Drawing` 缩小，视频用 PATH 上的 ffmpeg 抽帧，再不行用 Shell `IShellItemImageFactory`。
 
 ## 飞书发给自己
 

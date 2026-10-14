@@ -40,6 +40,8 @@ namespace Nanally
         public TextBlock ThumbHint;
         public bool ThumbQueued;
         public bool ThumbFailed;
+        public CheckBox CheckHost;
+        public Border RingHost;
     }
 
     sealed class AppSettings
@@ -150,6 +152,61 @@ namespace Nanally
             "/sdcard/Pictures/ScreenRecorder"
         };
 
+        const double MediaGap = 12;
+        static readonly FontFamily MonoFont = new FontFamily("Cascadia Mono, Consolas, Microsoft YaHei UI");
+        Border crumbBorder;
+        ScrollViewer crumbScroll;
+        StackPanel crumbPanel;
+        int logsGeneration;
+        ScrollViewer mediaScroller;
+        UIElement mediaEmptyHost;
+        TextBlock mediaEmptyTitle;
+        TextBlock mediaEmptyMark;
+        WrapPanel mediaEmptyTips;
+        bool mediaLoading;
+        string mediaLoadError;
+        int mediaVisibleCount;
+        Border mediaBar;
+        TextBlock mediaBarTitle;
+        TextBlock mediaBarStatus;
+        Button segAll;
+        Button segShots;
+        Button segVideos;
+        int mediaFilterIndex;
+        Button selectAllButton;
+        readonly List<Border> mediaTileCards = new List<Border>();
+        readonly List<Border> mediaTileFrames = new List<Border>();
+        double lastFitWidth = -1;
+        List<MediaItem> mediaOrdered = new List<MediaItem>();
+        MediaItem previewItem;
+        TextBlock previewMeta;
+        Border previewCheck;
+        TextBlock previewCheckText;
+        Button previewPrev;
+        Button previewNext;
+        Button previewSend;
+        TextBlock apkCountText;
+        TextBlock apkDropSub;
+        Border apkFileChip;
+        TextBlock apkFileName;
+        TextBlock apkFileMeta;
+        TextBlock apkRowsHeader;
+        StackPanel apkRowsPanel;
+        Button apkLogToggle;
+        Border apkLogBox;
+        TextBlock apkIdleHint;
+        readonly Dictionary<string, ApkRow> apkRows = new Dictionary<string, ApkRow>(StringComparer.OrdinalIgnoreCase);
+        readonly List<Button> accentSwatches = new List<Button>();
+        TextBlock pathStats;
+        TextBlock pathHint;
+        int pathStatsGeneration;
+        TextBlock tokenPlaceholder;
+        readonly System.Windows.Shapes.Ellipse[] larkDots = new System.Windows.Shapes.Ellipse[3];
+        readonly TextBlock[] larkValues = new TextBlock[3];
+        int larkStatusGeneration;
+        Border aboutRemotePill;
+        TextBlock aboutRemoteText;
+
         void BuildShell()
         {
             Title = "Nanally";
@@ -231,6 +288,20 @@ namespace Nanally
             ShowNav("logs");
             SourceInitialized += delegate { Acrylic.TryApply(this, Theme.Dark, settings.EnableGlass); };
             Closing += delegate { thumbGeneration++; ClosePreview(); };
+            PreviewKeyDown += delegate(object s, KeyEventArgs e)
+            {
+                if (previewLayer == null || previewLayer.Visibility != Visibility.Visible)
+                    return;
+                if (e.Key == Key.Left)
+                    PreviewStep(-1);
+                else if (e.Key == Key.Right)
+                    PreviewStep(1);
+                else if (e.Key == Key.Space)
+                    PreviewToggleCheck();
+                else
+                    return;
+                e.Handled = true;
+            };
             KeyDown += delegate(object s, KeyEventArgs e)
             {
                 if (e.Key != Key.Escape)
@@ -355,7 +426,7 @@ namespace Nanally
                 BorderThickness = new Thickness(0, 0, 1, 0)
             };
             var dock = new DockPanel();
-            navToggle = NavButton("\uE700", null, false);
+            navToggle = NavButton(IconSidebar, null, false);
             navToggle.Margin = new Thickness(12, 10, 12, 4);
             navToggle.ToolTip = "展开 / 收起侧栏";
             navToggle.Click += delegate { SetSidebar(!settings.SidebarExpanded); };
@@ -363,16 +434,20 @@ namespace Nanally
             dock.Children.Add(navToggle);
 
             var nav = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            tabLogs = NavButton("\uE8B7", "提取日志", true);
+            tabLogs = NavButton(IconLogs, "提取日志", true);
+            tabLogs.ToolTip = "提取日志";
             txtNavLogs = LabelOf(tabLogs);
             tabLogs.Click += delegate { ShowNav("logs"); };
-            tabMedia = NavButton("\uE91B", "截图录屏", false);
+            tabMedia = NavButton(IconMedia, "截图录屏", false);
+            tabMedia.ToolTip = "截图录屏";
             txtNavMedia = LabelOf(tabMedia);
             tabMedia.Click += delegate { ShowNav("media"); };
-            tabApk = NavButton("\uE7B8", "安装 APK", false);
+            tabApk = NavButton(IconApk, "安装 APK", false);
+            tabApk.ToolTip = "安装 APK";
             txtNavApk = LabelOf(tabApk);
             tabApk.Click += delegate { ShowNav("apk"); };
-            navSettings = NavButton("\uE713", "设置", false);
+            navSettings = NavButton(IconSettings, "设置", false);
+            navSettings.ToolTip = "设置";
             txtNavSettings = LabelOf(navSettings);
             navSettings.Click += delegate { ShowNav("settings"); };
             nav.Children.Add(tabLogs);
@@ -389,6 +464,44 @@ namespace Nanally
             side.Child = dock;
             SetSidebar(settings.SidebarExpanded);
             return side;
+        }
+
+        // Sidebar icons are drawn on a 20×20 grid as outline strokes, so each page reads by silhouette
+        // instead of four near-identical MDL2 rectangles.
+        const string IconSidebar = "M4.5,3.5 H15.5 A2,2 0 0 1 17.5,5.5 V14.5 A2,2 0 0 1 15.5,16.5 H4.5 A2,2 0 0 1 2.5,14.5 V5.5 A2,2 0 0 1 4.5,3.5 Z M8,3.5 V16.5";
+        const string IconLogs = "M5.5,2.5 H11.5 L15.5,6.5 V16 A1.5,1.5 0 0 1 14,17.5 H5.5 A1.5,1.5 0 0 1 4,16 V4 A1.5,1.5 0 0 1 5.5,2.5 Z M11.5,2.5 V6.5 H15.5 M7,9.5 H12.5 M7,12 H12.5 M7,14.5 H10.5";
+        const string IconMedia = "M4,4 H16 A1.5,1.5 0 0 1 17.5,5.5 V14.5 A1.5,1.5 0 0 1 16,16 H4 A1.5,1.5 0 0 1 2.5,14.5 V5.5 A1.5,1.5 0 0 1 4,4 Z M2.5,13.5 L7,9.5 L10.5,12.5 L13,10.5 L17.5,14 M12.1,7.5 A1.4,1.4 0 1 0 14.9,7.5 A1.4,1.4 0 1 0 12.1,7.5 Z";
+        const string IconApk = "M10,2.5 V11.5 M6.5,8 L10,11.5 L13.5,8 M3,12.5 V15.5 A2,2 0 0 0 5,17.5 H15 A2,2 0 0 0 17,15.5 V12.5";
+        const string IconSettings = "M3,6 H6.5 M10.5,6 H17 M3,14 H10 M14,14 H17 M8.5,4 A2,2 0 1 0 8.5,8 A2,2 0 1 0 8.5,4 Z M12,12 A2,2 0 1 0 12,16 A2,2 0 1 0 12,12 Z";
+
+        static Viewbox StrokeIcon(string data, double size, Brush stroke)
+        {
+            var geometry = Geometry.Parse(data);
+            geometry.Freeze();
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = geometry,
+                Stroke = stroke,
+                StrokeThickness = 1.6,
+                StrokeLineJoin = PenLineJoin.Round,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                Width = 20,
+                Height = 20,
+                Stretch = Stretch.None
+            };
+            var box = new Grid { Width = 20, Height = 20 };
+            box.Children.Add(path);
+            return new Viewbox { Width = size, Height = size, Child = box };
+        }
+
+        static System.Windows.Shapes.Path IconPathOf(Border tile)
+        {
+            var view = tile == null ? null : tile.Child as Viewbox;
+            var box = view == null ? null : view.Child as Grid;
+            if (box == null || box.Children.Count == 0)
+                return null;
+            return box.Children[0] as System.Windows.Shapes.Path;
         }
 
         Button AboutButton()
@@ -417,7 +530,7 @@ namespace Nanally
             panelSidebarBrand = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             var brand = new TextBlock { Text = "Nanally", FontWeight = FontWeights.SemiBold, FontSize = 14 };
             BindInk(brand);
-            var ver = new TextBlock { Text = "v1.0", FontSize = 11 };
+            var ver = new TextBlock { Text = AppInfo.DisplayVersion, FontSize = 11 };
             BindLabel(ver);
             panelSidebarBrand.Children.Add(brand);
             panelSidebarBrand.Children.Add(ver);
@@ -449,7 +562,7 @@ namespace Nanally
             return grid.Children[0] as Border;
         }
 
-        Button NavButton(string glyph, string label, bool active)
+        Button NavButton(string iconData, string label, bool active)
         {
             var btn = new Button
             {
@@ -475,14 +588,7 @@ namespace Nanally
                 CornerRadius = new CornerRadius(10),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
-                {
-                    Text = glyph,
-                    FontFamily = Theme.IconFont,
-                    FontSize = 16,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
+                Child = StrokeIcon(iconData, 20, Theme.Ink)
             };
             grid.Children.Add(tile);
             if (!string.IsNullOrEmpty(label))
@@ -516,28 +622,23 @@ namespace Nanally
             if (tab == null)
                 return;
             var tile = IconTile(tab);
-            if (tile != null)
-            {
-                tile.Tag = active ? "on" : "off";
-                tile.Background = active ? Theme.Pink : Brushes.Transparent;
-                var icon = tile.Child as TextBlock;
-                if (icon != null)
-                    icon.Foreground = active ? Brushes.White : Theme.Ink;
-                var label = LabelOf(tab);
-                if (label != null)
-                {
-                    // Icon tile carries the accent fill; label stays dark in light theme (white-on-white was invisible).
-                    label.Foreground = active
-                        ? (Theme.Dark ? Brushes.White : Theme.Pink)
-                        : Theme.Ink;
-                    label.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
-                }
-                tab.FontWeight = FontWeights.Normal;
+            if (tile == null)
                 return;
+            tile.Tag = active ? "on" : "off";
+            tile.Background = active ? Theme.Pink : Brushes.Transparent;
+            var icon = IconPathOf(tile);
+            if (icon != null)
+                icon.Stroke = active ? Brushes.White : Theme.Ink;
+            var label = LabelOf(tab);
+            if (label != null)
+            {
+                // Icon tile carries the accent fill; label stays dark in light theme (white-on-white was invisible).
+                label.Foreground = active
+                    ? (Theme.Dark ? Brushes.White : Theme.Pink)
+                    : Theme.Ink;
+                label.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
             }
-            tab.Template = LeftButtonTemplate(active ? Theme.Pink : Theme.Chip, active ? Theme.PinkPressed : Theme.NavHover, 10);
-            tab.Foreground = active ? Brushes.White : Theme.Ink;
-            tab.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+            tab.FontWeight = FontWeights.Normal;
         }
 
         void SetSidebar(bool expanded)
@@ -597,30 +698,31 @@ namespace Nanally
                 mediaTools.Visibility = page == "media" ? Visibility.Visible : Visibility.Collapsed;
             if (apkTools != null)
                 apkTools.Visibility = page == "apk" ? Visibility.Visible : Visibility.Collapsed;
+            // 截图录屏页用浮动操作条代替底栏。
             if (actionFooter != null)
-                actionFooter.Visibility = page == "logs" || page == "media" || page == "apk" ? Visibility.Visible : Visibility.Collapsed;
+                actionFooter.Visibility = page == "logs" || page == "apk" ? Visibility.Visible : Visibility.Collapsed;
             if (footerButtons != null)
-                footerButtons.Visibility = page == "apk" ? Visibility.Collapsed : Visibility.Visible;
+                footerButtons.Visibility = page == "logs" ? Visibility.Visible : Visibility.Collapsed;
             if (apkProgressHost != null)
-                apkProgressHost.Visibility = page == "apk" ? Visibility.Visible : Visibility.Collapsed;
-            if (copyButton != null)
-                copyButton.Visibility = page == "logs" ? Visibility.Visible : Visibility.Collapsed;
-            if (openCurrentButton != null)
-                openCurrentButton.Visibility = page == "logs" ? Visibility.Visible : Visibility.Collapsed;
-            if (sendButton != null)
-                sendButton.Visibility = page == "media" ? Visibility.Visible : Visibility.Collapsed;
-            if (page == "logs")
+                apkProgressHost.Visibility = Visibility.Collapsed;
+            if (page != "media")
                 ClosePreview();
+            if (page == "logs")
+                RefreshLogsList();
             if (page == "media")
             {
                 FitMediaTiles();
+                UpdateMediaEmpty();
                 if (!busy)
                     RefreshMediaAsync();
             }
             if (page == "apk")
+            {
+                UpdateApkHeader();
                 SetStatus(settings.ApkInstallAllDevices
-                    ? "把 APK 拖进来，或点「选择 APK」；会装到所有已连接手机"
-                    : "把 APK 拖进来，或点「选择 APK」；装到顶栏选中的那台", Theme.Label);
+                    ? "把 APK 拖进来，或点上面的区域选择；会装到所有已连接手机"
+                    : "把 APK 拖进来，或点上面的区域选择；装到顶栏选中的那台", Theme.Label);
+            }
             if (page == "settings")
                 BindSettingsFields();
             if (page == "about")
@@ -656,13 +758,10 @@ namespace Nanally
         {
             var bar = new Border
             {
-                Margin = new Thickness(12, 10, 12, 0),
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(12, 8, 12, 8)
+                Margin = new Thickness(12, 8, 12, 0),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0)
             };
-            Theme.BindElement(bar, BackgroundProperty, "nn.Card");
-            ClipRound(bar, 14);
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -670,33 +769,27 @@ namespace Nanally
             deviceHost = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             deviceCard = new Border
             {
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(10, 4, 10, 4),
+                CornerRadius = new CornerRadius(16),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12, 4, 12, 4),
                 MinHeight = 32,
                 VerticalAlignment = VerticalAlignment.Center,
                 Tag = "nodrag",
                 Child = deviceHost
             };
-            Theme.BindElement(deviceCard, BackgroundProperty, "nn.Field");
+            Theme.BindElement(deviceCard, BackgroundProperty, "nn.Card");
+            Theme.BindElement(deviceCard, Border.BorderBrushProperty, "nn.Hairline");
             row.Children.Add(deviceCard);
-            refreshText = new TextBlock
-            {
-                Text = "刷新设备",
-                FontSize = 13,
-                Cursor = Cursors.Hand,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(12, 0, 16, 0),
-                Tag = "nodrag"
-            };
-            refreshText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Pink");
-            refreshText.MouseLeftButtonUp += delegate
+            var refresh = IconButton("", "刷新设备");
+            refresh.Margin = new Thickness(8, 0, 0, 0);
+            refreshText = refresh.Content as TextBlock;
+            refresh.Click += delegate
             {
                 if (!busy)
                     RefreshAsync();
             };
-            Grid.SetColumn(refreshText, 1);
-            row.Children.Add(refreshText);
+            Grid.SetColumn(refresh, 1);
+            row.Children.Add(refresh);
             logsTools = BuildLogsTools();
             mediaTools = BuildMediaTools();
             apkTools = BuildApkTools();
@@ -713,42 +806,107 @@ namespace Nanally
             return bar;
         }
 
-        UIElement BuildApkTools()
+        Button IconButton(string glyph, string tip)
         {
-            var bar = new StackPanel
+            var text = new TextBlock
             {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
+                Text = glyph,
+                FontFamily = Theme.IconFont,
+                FontSize = 13,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            chkApkUseAdbInstall = IosSwitch();
-            chkApkUseAdbInstall.IsChecked = settings.ApkUseAdbInstall;
-            chkApkUseAdbInstall.Checked += delegate { OnApkUseAdbInstallToggled(); };
-            chkApkUseAdbInstall.Unchecked += delegate { OnApkUseAdbInstallToggled(); };
-            bar.Children.Add(ApkOption("用 adb install", chkApkUseAdbInstall));
-            chkApkUninstall = IosSwitch();
-            chkApkUninstall.IsChecked = settings.ApkUninstallFirst;
-            chkApkUninstall.Checked += delegate { OnApkUninstallToggled(); };
-            chkApkUninstall.Unchecked += delegate { OnApkUninstallToggled(); };
-            bar.Children.Add(ApkOption("先卸载同包名再安装", chkApkUninstall));
-            chkApkInstallAll = IosSwitch();
-            chkApkInstallAll.IsChecked = settings.ApkInstallAllDevices;
-            chkApkInstallAll.Checked += delegate { OnApkInstallAllToggled(); };
-            chkApkInstallAll.Unchecked += delegate { OnApkInstallAllToggled(); };
-            bar.Children.Add(ApkOption("装到全部已连接手机", chkApkInstallAll));
-            return bar;
+            BindInk(text);
+            var btn = new Button
+            {
+                Content = text,
+                Width = 32,
+                Height = 32,
+                Cursor = Cursors.Hand,
+                Focusable = false,
+                ToolTip = tip
+            };
+            btn.Template = OutlineButtonTemplate(new Thickness(0), Theme.Card);
+            return btn;
+        }
+
+        static Border Pill(string text, out TextBlock label)
+        {
+            label = new TextBlock { Text = text, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+            BindLabel(label);
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(9, 2, 9, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = label
+            };
+            Theme.BindElement(pill, BackgroundProperty, "nn.Chip");
+            return pill;
+        }
+
+        static void PaintPill(Border pill, TextBlock label, string fgKey, string bgKey)
+        {
+            if (pill == null || label == null)
+                return;
+            label.SetResourceReference(TextBlock.ForegroundProperty, fgKey);
+            pill.SetResourceReference(Border.BackgroundProperty, bgKey);
+        }
+
+        void OnDevicesRendered()
+        {
+            UpdateApkHeader();
+            UpdateMediaEmpty();
+        }
+
+        UIElement BuildApkTools()
+        {
+            TextBlock label;
+            var pill = Pill("已连接 0 台", out label);
+            apkCountText = label;
+            pill.HorizontalAlignment = HorizontalAlignment.Right;
+            pill.SetResourceReference(Border.BackgroundProperty, "nn.Card");
+            pill.Padding = new Thickness(12, 5, 12, 6);
+            pill.CornerRadius = new CornerRadius(14);
+            return pill;
         }
 
         UIElement BuildLogsTools()
         {
-            var addr = new Grid { VerticalAlignment = VerticalAlignment.Center };
+            var addr = new Grid { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
             addr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             addr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             addr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            addr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var up = SmallButton("上级");
+            var up = IconButton("", "上级目录");
             up.Click += delegate { BrowseUp(); };
             addr.Children.Add(up);
+
+            crumbBorder = new Border
+            {
+                Height = 32,
+                Margin = new Thickness(8, 0, 8, 0),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(4, 0, 4, 0),
+                Cursor = Cursors.IBeam,
+                ToolTip = "点空白处可以直接输入路径",
+                Tag = "nodrag"
+            };
+            Theme.BindElement(crumbBorder, BackgroundProperty, "nn.Field");
+            Theme.BindElement(crumbBorder, Border.BorderBrushProperty, "nn.Hairline");
+            crumbScroll = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            crumbPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            crumbScroll.Content = crumbPanel;
+            crumbBorder.Child = crumbScroll;
+            crumbBorder.MouseLeftButtonUp += delegate { EnterPathEdit(); };
+            Grid.SetColumn(crumbBorder, 1);
+            addr.Children.Add(crumbBorder);
+
             logsPathBox = new TextBox
             {
                 Text = logsBrowsePath,
@@ -756,67 +914,219 @@ namespace Nanally
                 Margin = new Thickness(8, 0, 8, 0),
                 Padding = new Thickness(8, 0, 8, 0),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                Background = Theme.Field,
-                Foreground = Theme.Ink,
-                BorderBrush = Theme.Hairline,
-                CaretBrush = Theme.Pink
+                FontFamily = MonoFont,
+                FontSize = 12,
+                Visibility = Visibility.Collapsed
             };
             StyleField(logsPathBox);
             logsPathBox.KeyDown += delegate(object s, KeyEventArgs e)
             {
                 if (e.Key == Key.Enter)
-                    ApplyLogsPath(logsPathBox.Text);
+                {
+                    e.Handled = true;
+                    var typed = logsPathBox.Text;
+                    ExitPathEdit();
+                    ApplyLogsPath(typed);
+                }
+                else if (e.Key == Key.Escape)
+                {
+                    e.Handled = true;
+                    ExitPathEdit();
+                }
             };
+            logsPathBox.LostKeyboardFocus += delegate { ExitPathEdit(); };
             Grid.SetColumn(logsPathBox, 1);
             addr.Children.Add(logsPathBox);
-            var browse = SmallButton("浏览");
-            browse.Margin = new Thickness(0, 0, 0, 0);
+
+            var browse = IconButton("", "选择目录");
             browse.Click += delegate { BrowseLogsFolder(); };
             Grid.SetColumn(browse, 2);
             addr.Children.Add(browse);
-            var refresh = SmallButton("刷新");
-            refresh.Margin = new Thickness(8, 0, 0, 0);
-            refresh.Click += delegate { RefreshLogsList(); };
-            Grid.SetColumn(refresh, 3);
-            addr.Children.Add(refresh);
             return addr;
+        }
+
+        void EnterPathEdit()
+        {
+            if (logsPathBox == null || crumbBorder == null)
+                return;
+            logsPathBox.Text = logsBrowsePath ?? "";
+            crumbBorder.Visibility = Visibility.Collapsed;
+            logsPathBox.Visibility = Visibility.Visible;
+            logsPathBox.Focus();
+            logsPathBox.SelectAll();
+        }
+
+        void ExitPathEdit()
+        {
+            if (logsPathBox == null || crumbBorder == null || logsPathBox.Visibility != Visibility.Visible)
+                return;
+            logsPathBox.Visibility = Visibility.Collapsed;
+            crumbBorder.Visibility = Visibility.Visible;
+            logsPathBox.Text = logsBrowsePath ?? "";
+        }
+
+        void SetLogsPathText(string path)
+        {
+            if (logsPathBox != null && logsPathBox.Visibility != Visibility.Visible)
+                logsPathBox.Text = path ?? "";
+            if (crumbPanel == null)
+                return;
+            crumbPanel.Children.Clear();
+            if (string.IsNullOrEmpty(path))
+                return;
+            var parts = new List<string>();
+            var paths = new List<string>();
+            var cursor = path.TrimEnd('\\');
+            while (!string.IsNullOrEmpty(cursor))
+            {
+                var parent = Path.GetDirectoryName(cursor);
+                var name = Path.GetFileName(cursor);
+                if (string.IsNullOrEmpty(name))
+                    name = cursor.TrimEnd('\\');
+                parts.Insert(0, name);
+                paths.Insert(0, cursor.Length == 2 && cursor[1] == ':' ? cursor + "\\" : cursor);
+                if (string.IsNullOrEmpty(parent) || parent == cursor)
+                    break;
+                cursor = parent.TrimEnd('\\');
+            }
+            for (var i = 0; i < parts.Count; i++)
+            {
+                if (i > 0)
+                {
+                    var sep = new TextBlock { Text = "›", FontSize = 12, Margin = new Thickness(1, 0, 1, 1), VerticalAlignment = VerticalAlignment.Center };
+                    BindLabel(sep);
+                    sep.Opacity = 0.6;
+                    crumbPanel.Children.Add(sep);
+                }
+                var last = i == parts.Count - 1;
+                var target = paths[i];
+                var text = new TextBlock
+                {
+                    Text = parts[i],
+                    FontFamily = MonoFont,
+                    FontSize = 12,
+                    Margin = new Thickness(6, 2, 6, 3),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                if (last)
+                    BindInk(text);
+                else
+                    BindLabel(text);
+                var seg = new Button { Content = text, Cursor = Cursors.Hand, Focusable = false, VerticalAlignment = VerticalAlignment.Center };
+                seg.Template = FlatButtonTemplate(last ? (Brush)Theme.Chip : Brushes.Transparent, Theme.RowHover, 5);
+                seg.Click += delegate
+                {
+                    if (!Directory.Exists(target))
+                        return;
+                    logsBrowsePath = target;
+                    RefreshLogsList();
+                };
+                crumbPanel.Children.Add(seg);
+            }
+            var scroll = crumbScroll;
+            if (scroll != null)
+                Dispatcher.BeginInvoke(new Action(delegate { scroll.ScrollToRightEnd(); }), DispatcherPriority.Loaded);
         }
 
         UIElement BuildMediaTools()
         {
-            var bar = new Grid { VerticalAlignment = VerticalAlignment.Center };
-            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var bar = new Grid { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            mediaFilter = new ComboBox { Width = 120, Height = 32, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Left };
-            mediaFilter.Items.Add("全部");
-            mediaFilter.Items.Add("截图");
-            mediaFilter.Items.Add("录屏");
-            StyleCombo(mediaFilter);
-            mediaFilter.SelectionChanged += delegate { RenderMediaRows(); };
-            bar.Children.Add(mediaFilter);
-            var reload = SmallButton("读取设备");
-            reload.Margin = new Thickness(8, 0, 0, 0);
-            reload.Click += delegate { RefreshMediaAsync(); };
-            Grid.SetColumn(reload, 1);
-            bar.Children.Add(reload);
-            var all = SmallButton("全选");
-            all.Margin = new Thickness(8, 0, 0, 0);
-            all.Click += delegate { SetAllChecked(true); };
-            Grid.SetColumn(all, 2);
-            bar.Children.Add(all);
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             mediaCount = new TextBlock
             {
-                Text = "还没读取 · 双击可以预览",
+                Text = "",
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                FontSize = 12
+                Margin = new Thickness(0, 0, 10, 0),
+                FontSize = 11
             };
             BindLabel(mediaCount);
-            Grid.SetColumn(mediaCount, 3);
             bar.Children.Add(mediaCount);
+
+            var seg = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(3),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Theme.BindElement(seg, BackgroundProperty, "nn.Card");
+            Theme.BindElement(seg, Border.BorderBrushProperty, "nn.Hairline");
+            var segRow = new StackPanel { Orientation = Orientation.Horizontal };
+            segAll = SegButton(0);
+            segShots = SegButton(1);
+            segVideos = SegButton(2);
+            segRow.Children.Add(segAll);
+            segRow.Children.Add(segShots);
+            segRow.Children.Add(segVideos);
+            seg.Child = segRow;
+            Grid.SetColumn(seg, 1);
+            bar.Children.Add(seg);
+            PaintSegments();
+
+            var reload = IconButton("", "重新从手机读取");
+            reload.Margin = new Thickness(8, 0, 0, 0);
+            reload.Click += delegate { RefreshMediaAsync(); };
+            Grid.SetColumn(reload, 2);
+            bar.Children.Add(reload);
+            selectAllButton = SmallButton("全选");
+            selectAllButton.Margin = new Thickness(8, 0, 0, 0);
+            selectAllButton.Template = OutlineButtonTemplate(new Thickness(12, 0, 12, 0), Theme.Card);
+            selectAllButton.Click += delegate { SetAllChecked(!AllVisibleChecked()); };
+            Grid.SetColumn(selectAllButton, 3);
+            bar.Children.Add(selectAllButton);
             return bar;
+        }
+
+        Button SegButton(int index)
+        {
+            var text = new TextBlock { FontSize = 12, Margin = new Thickness(11, 3, 11, 4), VerticalAlignment = VerticalAlignment.Center };
+            var btn = new Button { Content = text, Cursor = Cursors.Hand, Focusable = false };
+            btn.Click += delegate
+            {
+                if (mediaFilterIndex == index)
+                    return;
+                mediaFilterIndex = index;
+                PaintSegments();
+                RenderMediaRows();
+            };
+            return btn;
+        }
+
+        void PaintSegments()
+        {
+            var shots = 0;
+            var videos = 0;
+            foreach (var item in mediaItems)
+            {
+                if (item.IsVideo)
+                    videos++;
+                else
+                    shots++;
+            }
+            PaintSegment(segAll, "全部", shots + videos, mediaFilterIndex == 0);
+            PaintSegment(segShots, "截图", shots, mediaFilterIndex == 1);
+            PaintSegment(segVideos, "录屏", videos, mediaFilterIndex == 2);
+        }
+
+        void PaintSegment(Button btn, string label, int count, bool on)
+        {
+            if (btn == null)
+                return;
+            var text = btn.Content as TextBlock;
+            if (text != null)
+            {
+                text.Text = mediaItems.Count == 0 ? label : label + " " + count.ToString(CultureInfo.InvariantCulture);
+                if (on)
+                    BindInk(text);
+                else
+                    BindLabel(text);
+                text.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+            }
+            btn.Template = FlatButtonTemplate(on ? (Brush)Theme.Chip : Brushes.Transparent, on ? (Brush)Theme.Chip : Theme.RowHover, 7);
         }
 
         Grid BuildLogsPage()
@@ -824,18 +1134,18 @@ namespace Nanally
             var page = new Grid { Margin = new Thickness(12, 10, 12, 8) };
             var card = GlassCard();
             var inner = new Grid();
-            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
+            inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32) });
             inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             var header = ExplorerHeader(false);
             inner.Children.Add(header);
             var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
             var host = new Grid();
-            logsRows = new StackPanel();
+            logsRows = new StackPanel { Margin = new Thickness(6, 2, 6, 6) };
             logsEmpty = new TextBlock
             {
                 Text = "这个目录是空的",
-                Margin = new Thickness(12, 16, 0, 0),
+                Margin = new Thickness(16, 18, 0, 0),
                 Visibility = Visibility.Collapsed
             };
             BindLabel(logsEmpty);
@@ -851,130 +1161,463 @@ namespace Nanally
 
         Grid BuildMediaPage()
         {
-            var page = new Grid { Margin = new Thickness(12, 10, 12, 8) };
+            var page = new Grid { Margin = new Thickness(12, 10, 12, 12) };
             var card = GlassCard();
-            var scroller = new ScrollViewer
+            var layer = new Grid();
+            mediaScroller = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Padding = new Thickness(4, 4, 4, 8)
+                Padding = new Thickness(16, 12, 10, 12)
             };
-            var host = new Grid();
-            mediaTiles = new WrapPanel { Margin = new Thickness(2, 4, 2, 8) };
+            mediaTiles = new StackPanel { Margin = new Thickness(0, 0, 0, 72) };
+            mediaTiles.SizeChanged += delegate(object s, SizeChangedEventArgs e)
+            {
+                if (e.WidthChanged)
+                    FitMediaTiles();
+            };
+            mediaScroller.Content = mediaTiles;
+            layer.Children.Add(mediaScroller);
+            mediaEmptyHost = BuildEmptyState();
+            layer.Children.Add(mediaEmptyHost);
+            card.Child = layer;
+            page.Children.Add(card);
+            mediaBar = BuildMediaBar();
+            page.Children.Add(mediaBar);
+            return page;
+        }
+
+        UIElement BuildEmptyState()
+        {
+            var stack = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 420,
+                Margin = new Thickness(24)
+            };
+            var phone = new Border
+            {
+                Width = 48,
+                Height = 80,
+                CornerRadius = new CornerRadius(11),
+                BorderThickness = new Thickness(2.5),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            Theme.BindElement(phone, Border.BorderBrushProperty, "nn.Label");
+            var phoneInner = new Grid();
+            mediaEmptyMark = new TextBlock
+            {
+                Text = "!",
+                FontSize = 22,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            mediaEmptyMark.SetResourceReference(TextBlock.ForegroundProperty, "nn.Orange");
+            phoneInner.Children.Add(mediaEmptyMark);
+            var home = new Border
+            {
+                Width = 14,
+                Height = 3,
+                CornerRadius = new CornerRadius(1.5),
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 5)
+            };
+            Theme.BindElement(home, BackgroundProperty, "nn.Label");
+            phoneInner.Children.Add(home);
+            phone.Child = phoneInner;
+            stack.Children.Add(phone);
+            mediaEmptyTitle = new TextBlock
+            {
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap
+            };
+            BindInk(mediaEmptyTitle);
+            stack.Children.Add(mediaEmptyTitle);
             mediaEmpty = new TextBlock
             {
-                Text = "点「读取设备」，从手机列出截图和录屏",
-                Margin = new Thickness(12, 16, 0, 0)
+                FontSize = 12.5,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 20,
+                Margin = new Thickness(0, 8, 0, 0)
             };
             BindLabel(mediaEmpty);
-            host.Children.Add(mediaTiles);
-            host.Children.Add(mediaEmpty);
-            scroller.Content = host;
-            scroller.SizeChanged += delegate { FitMediaTiles(); };
-            card.Child = scroller;
-            page.Children.Add(card);
-            return page;
+            stack.Children.Add(mediaEmpty);
+            mediaEmptyTips = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) };
+            stack.Children.Add(mediaEmptyTips);
+            return stack;
+        }
+
+        void UpdateMediaEmpty()
+        {
+            if (mediaEmptyHost == null)
+                return;
+            string title = null;
+            string body = null;
+            var warn = false;
+            var tips = false;
+            if (adbExe == null && !mediaLoading)
+            {
+                title = "没有找到 adb";
+                body = "装好 Android platform-tools，或把 adb 加进 PATH，再点顶栏的刷新。";
+            }
+            else if (selected == null)
+            {
+                title = "用数据线连上手机";
+                body = "手机打开 USB 调试，连上后点顶栏的刷新。";
+            }
+            else if (!selected.IsReady)
+            {
+                title = "在手机上点「允许 USB 调试」";
+                body = selected.DisplayName + " 已经插上，但还没允许这台电脑调试。手机上点「允许」之后，再点顶栏的刷新。";
+                warn = true;
+                tips = true;
+            }
+            else if (mediaLoading && mediaItems.Count == 0)
+            {
+                title = "正在读取…";
+                body = "从 " + selected.DisplayName + " 列出截图和录屏";
+            }
+            else if (mediaItems.Count == 0)
+            {
+                title = mediaLoadError != null ? "读取失败" : "手机上没有截图或录屏";
+                body = mediaLoadError ?? "常见的截图、录屏目录里都没找到文件。";
+                warn = mediaLoadError != null;
+            }
+            else if (mediaVisibleCount == 0)
+            {
+                title = "这个筛选下没有文件";
+                body = "切回「全部」看看。";
+            }
+            if (title == null)
+            {
+                mediaEmptyHost.Visibility = Visibility.Collapsed;
+                return;
+            }
+            mediaEmptyHost.Visibility = Visibility.Visible;
+            mediaEmptyTitle.Text = title;
+            mediaEmpty.Text = body;
+            mediaEmptyMark.Visibility = warn ? Visibility.Visible : Visibility.Collapsed;
+            mediaEmptyTips.Children.Clear();
+            if (tips)
+            {
+                mediaEmptyTips.Children.Add(TipChip("没看到弹窗？拔插一次数据线"));
+                mediaEmptyTips.Children.Add(TipChip("勾上「一律允许」，下次就不问了"));
+            }
+        }
+
+        static Border TipChip(string text)
+        {
+            var label = new TextBlock { Text = text, FontSize = 11 };
+            BindLabel(label);
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(12),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 3, 10, 4),
+                Margin = new Thickness(4),
+                Child = label
+            };
+            Theme.BindElement(chip, Border.BorderBrushProperty, "nn.Hairline");
+            return chip;
+        }
+
+        Border BuildMediaBar()
+        {
+            var bar = new Border
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 16),
+                CornerRadius = new CornerRadius(12),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(16, 7, 7, 7),
+                Visibility = Visibility.Collapsed,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 24,
+                    ShadowDepth = 6,
+                    Opacity = 0.35,
+                    Color = Colors.Black
+                }
+            };
+            Theme.BindElement(bar, BackgroundProperty, "nn.Menu");
+            Theme.BindElement(bar, Border.BorderBrushProperty, "nn.Hairline");
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var info = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0), MinWidth = 140 };
+            mediaBarTitle = new TextBlock { FontSize = 12.5, FontWeight = FontWeights.SemiBold };
+            BindInk(mediaBarTitle);
+            info.Children.Add(mediaBarTitle);
+            mediaBarStatus = new TextBlock
+            {
+                FontSize = 11,
+                MaxWidth = 380,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Visibility = Visibility.Collapsed,
+                Margin = new Thickness(0, 1, 0, 0)
+            };
+            BindLabel(mediaBarStatus);
+            info.Children.Add(mediaBarStatus);
+            grid.Children.Add(info);
+            var cancel = SmallButton("取消");
+            cancel.Template = OutlineButtonTemplate(new Thickness(12, 0, 12, 0), Brushes.Transparent);
+            cancel.Margin = new Thickness(0, 0, 8, 0);
+            cancel.Click += delegate
+            {
+                if (!busy)
+                    SetAllChecked(false);
+            };
+            Grid.SetColumn(cancel, 1);
+            grid.Children.Add(cancel);
+            sendButton = MakePrimary("发给自己");
+            sendButton.Click += delegate { SendSelectedAsync(); };
+            Grid.SetColumn(sendButton, 2);
+            grid.Children.Add(sendButton);
+            bar.Child = grid;
+            return bar;
+        }
+
+        void MirrorMediaStatus(string text, Brush brush)
+        {
+            if (mediaBarStatus == null || currentPage != "media")
+                return;
+            mediaBarStatus.Text = text ?? "";
+            mediaBarStatus.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
+            var key = Theme.Key(brush ?? Theme.Label);
+            if (key != null)
+                mediaBarStatus.SetResourceReference(TextBlock.ForegroundProperty, key);
+            else
+                mediaBarStatus.Foreground = brush;
         }
 
         Grid BuildApkPage()
         {
-            var page = new Grid { Margin = new Thickness(12, 8, 12, 8) };
+            var page = new Grid { Margin = new Thickness(12, 10, 12, 8) };
             page.AllowDrop = true;
             page.DragOver += OnApkDragOver;
             page.Drop += OnApkDrop;
             var card = GlassCard();
-            var stack = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
+            var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(18, 16, 18, 16) };
+            var stack = new StackPanel();
 
-            var title = new TextBlock
+            var drop = new Grid { MinHeight = 104, Cursor = Cursors.Hand, AllowDrop = true, Background = Brushes.Transparent };
+            var dash = new System.Windows.Shapes.Rectangle
             {
-                Text = "安装 APK",
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 0, 0, 10)
+                RadiusX = 14,
+                RadiusY = 14,
+                StrokeThickness = 1.5,
+                StrokeDashArray = new DoubleCollection(new double[] { 4, 3 }),
+                Opacity = 0.6
             };
-            BindInk(title);
-            stack.Children.Add(title);
-
-            var drop = new Border
+            dash.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "nn.Pink");
+            dash.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "nn.AccentSoft");
+            drop.Children.Add(dash);
+            var dropRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(22, 16, 22, 16) };
+            var iconTile = new Border
             {
-                MinHeight = 72,
-                CornerRadius = new CornerRadius(10),
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(12),
-                AllowDrop = true,
-                Cursor = Cursors.Hand,
-                Margin = new Thickness(0, 0, 0, 8)
+                Width = 46,
+                Height = 46,
+                CornerRadius = new CornerRadius(12),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = StrokeIcon(IconApk, 22, Theme.Pink)
             };
-            Theme.BindElement(drop, BackgroundProperty, "nn.Field");
+            Theme.BindElement(iconTile, BackgroundProperty, "nn.AccentSoft");
+            dropRow.Children.Add(iconTile);
+            var dropText = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+            apkHint = new TextBlock { Text = "把 .apk 拖到这里", FontSize = 14, FontWeight = FontWeights.SemiBold };
+            BindInk(apkHint);
+            dropText.Children.Add(apkHint);
+            apkDropSub = new TextBlock { FontSize = 12, Margin = new Thickness(0, 3, 0, 0), TextWrapping = TextWrapping.Wrap };
+            BindLabel(apkDropSub);
+            dropText.Children.Add(apkDropSub);
+            dropRow.Children.Add(dropText);
+            drop.Children.Add(dropRow);
             drop.DragOver += OnApkDragOver;
             drop.Drop += OnApkDrop;
+            drop.MouseEnter += delegate { dash.Opacity = 1; };
+            drop.MouseLeave += delegate { dash.Opacity = 0.6; };
             drop.MouseLeftButtonUp += delegate
             {
                 if (!busy)
                     PickApkFile();
             };
-            apkHint = new TextBlock
-            {
-                Text = "把 .apk 拖到这里，或点击选择",
-                FontSize = 12,
-                TextAlignment = TextAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            BindLabel(apkHint);
-            drop.Child = apkHint;
             stack.Children.Add(drop);
 
-            var pick = SmallButton("选择 APK");
-            pick.HorizontalAlignment = HorizontalAlignment.Left;
-            pick.Margin = new Thickness(0, 0, 0, 12);
-            pick.Click += delegate { PickApkFile(); };
-            stack.Children.Add(pick);
+            var opts = new WrapPanel { Margin = new Thickness(2, 14, 0, 0) };
+            chkApkInstallAll = IosSwitch();
+            chkApkInstallAll.IsChecked = settings.ApkInstallAllDevices;
+            chkApkInstallAll.Checked += delegate { OnApkInstallAllToggled(); };
+            chkApkInstallAll.Unchecked += delegate { OnApkInstallAllToggled(); };
+            opts.Children.Add(ApkOption(chkApkInstallAll, "装到全部已连接手机", "多台时并行安装"));
+            chkApkUninstall = IosSwitch();
+            chkApkUninstall.IsChecked = settings.ApkUninstallFirst;
+            chkApkUninstall.Checked += delegate { OnApkUninstallToggled(); };
+            chkApkUninstall.Unchecked += delegate { OnApkUninstallToggled(); };
+            opts.Children.Add(ApkOption(chkApkUninstall, "先卸载同包名再安装", "需要 build-tools 里的 aapt 读包名"));
+            chkApkUseAdbInstall = IosSwitch();
+            chkApkUseAdbInstall.IsChecked = settings.ApkUseAdbInstall;
+            chkApkUseAdbInstall.Checked += delegate { OnApkUseAdbInstallToggled(); };
+            chkApkUseAdbInstall.Unchecked += delegate { OnApkUseAdbInstallToggled(); };
+            opts.Children.Add(ApkOption(chkApkUseAdbInstall, "用 adb install", "关闭时走 push + pm install"));
+            stack.Children.Add(opts);
 
-            var logTitle = new TextBlock
+            apkFileChip = new Border
             {
-                Text = "安装记录",
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 0, 0, 6)
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(10, 8, 12, 8),
+                Margin = new Thickness(0, 14, 0, 0),
+                Visibility = Visibility.Collapsed
             };
-            BindInk(logTitle);
-            stack.Children.Add(logTitle);
+            Theme.BindElement(apkFileChip, BackgroundProperty, "nn.RowHover");
+            var chipRow = new Grid();
+            chipRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            chipRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var badge = new Border
+            {
+                Width = 32,
+                Height = 32,
+                CornerRadius = new CornerRadius(8),
+                Background = B("#3DDC84"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = "APK",
+                    FontSize = 10,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = B("#0B3B22"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+            chipRow.Children.Add(badge);
+            var chipText = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            apkFileName = new TextBlock { FontSize = 13, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+            BindInk(apkFileName);
+            chipText.Children.Add(apkFileName);
+            apkFileMeta = new TextBlock { FontSize = 11, FontFamily = MonoFont, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
+            BindLabel(apkFileMeta);
+            chipText.Children.Add(apkFileMeta);
+            Grid.SetColumn(chipText, 1);
+            chipRow.Children.Add(chipText);
+            apkFileChip.Child = chipRow;
+            stack.Children.Add(apkFileChip);
+
+            apkRowsHeader = new TextBlock
+            {
+                Text = "安装进度",
+                FontSize = 12,
+                Margin = new Thickness(2, 16, 0, 8),
+                Visibility = Visibility.Collapsed
+            };
+            BindLabel(apkRowsHeader);
+            stack.Children.Add(apkRowsHeader);
+            apkRowsPanel = new StackPanel();
+            stack.Children.Add(apkRowsPanel);
+            apkIdleHint = new TextBlock
+            {
+                Text = "选好 APK 之后，这里会按手机逐台显示推送和安装进度。",
+                FontSize = 12,
+                Margin = new Thickness(2, 22, 0, 0)
+            };
+            BindLabel(apkIdleHint);
+            apkIdleHint.Opacity = 0.7;
+            stack.Children.Add(apkIdleHint);
+
+            apkLogToggle = new Button
+            {
+                Cursor = Cursors.Hand,
+                Focusable = false,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 10, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            var toggleText = new TextBlock { Text = "显示详细日志", FontSize = 12, Margin = new Thickness(4, 3, 4, 3) };
+            toggleText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Pink");
+            apkLogToggle.Content = toggleText;
+            apkLogToggle.Template = FlatButtonTemplate(Brushes.Transparent, Theme.RowHover, 6);
+            apkLogToggle.Click += delegate
+            {
+                var show = apkLogBox.Visibility != Visibility.Visible;
+                apkLogBox.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                toggleText.Text = show ? "收起详细日志" : "显示详细日志";
+            };
+            stack.Children.Add(apkLogToggle);
+            apkLogBox = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 6, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            Theme.BindElement(apkLogBox, BackgroundProperty, "nn.Field");
             apkLogScroller = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MaxHeight = 320
+                MaxHeight = 220
             };
             apkLogPanel = new StackPanel();
             apkLogScroller.Content = apkLogPanel;
-            stack.Children.Add(apkLogScroller);
+            apkLogBox.Child = apkLogScroller;
+            stack.Children.Add(apkLogBox);
 
-            card.Child = stack;
+            scroller.Content = stack;
+            card.Child = scroller;
             page.Children.Add(card);
+            UpdateApkHeader();
             return page;
         }
 
-        static UIElement ApkOption(string label, CheckBox box)
+        void UpdateApkHeader()
         {
-            var row = new StackPanel
+            var ready = 0;
+            foreach (var item in devices)
             {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(12, 0, 0, 0)
-            };
-            var text = new TextBlock
+                if (item != null && item.IsReady)
+                    ready++;
+            }
+            if (apkCountText != null)
+                apkCountText.Text = "已连接 " + ready.ToString(CultureInfo.InvariantCulture) + " 台";
+            if (apkDropSub != null)
             {
-                Text = label,
-                FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            BindInk(text);
+                string target;
+                if (settings.ApkInstallAllDevices)
+                    target = "会装到全部 " + ready.ToString(CultureInfo.InvariantCulture) + " 台已连接手机";
+                else if (selected != null && selected.IsReady)
+                    target = "装到 " + selected.DisplayName;
+                else
+                    target = "先连上一台已授权的手机";
+                apkDropSub.Text = "或点这里选择文件  ·  " + target;
+            }
+        }
+
+        static UIElement ApkOption(CheckBox box, string label, string sub)
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 28, 8) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             box.HorizontalAlignment = HorizontalAlignment.Left;
             box.VerticalAlignment = VerticalAlignment.Center;
-            box.Margin = new Thickness(0);
-            row.Children.Add(text);
+            box.Margin = new Thickness(0, 0, 10, 0);
             row.Children.Add(box);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = label, FontSize = 12.5 };
+            BindInk(title);
+            text.Children.Add(title);
+            var note = new TextBlock { Text = sub, FontSize = 11, Margin = new Thickness(0, 1, 0, 0) };
+            BindLabel(note);
+            note.Opacity = 0.85;
+            text.Children.Add(note);
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
             return row;
         }
 
@@ -992,6 +1635,7 @@ namespace Nanally
                 return;
             settings.ApkInstallAllDevices = chkApkInstallAll.IsChecked == true;
             settings.Save();
+            UpdateApkHeader();
         }
 
         void OnApkUseAdbInstallToggled()
@@ -1067,7 +1711,8 @@ namespace Nanally
             var block = new TextBlock
             {
                 Text = text,
-                FontSize = 12,
+                FontSize = 11.5,
+                FontFamily = MonoFont,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 4)
             };
@@ -1080,6 +1725,8 @@ namespace Nanally
             apkLogPanel.Children.Insert(0, block);
             if (apkLogScroller != null)
                 apkLogScroller.ScrollToHome();
+            if (apkLogToggle != null)
+                apkLogToggle.Visibility = Visibility.Visible;
             if (!string.IsNullOrEmpty(text))
             {
                 if (color == Theme.Red)
@@ -1089,6 +1736,153 @@ namespace Nanally
                 else
                     WhatHappened.Info("apk " + text);
             }
+        }
+
+        sealed class ApkRow
+        {
+            public TextBlock Phase;
+            public TextBlock Pct;
+            public Border Track;
+            public Border Fill;
+            public double Value;
+            public int State;
+            public DateTime Started;
+        }
+
+        void ResetApkRows(List<DeviceInfo> targets)
+        {
+            apkRows.Clear();
+            if (apkRowsPanel == null)
+                return;
+            apkRowsPanel.Children.Clear();
+            foreach (var device in targets)
+            {
+                var row = new ApkRow { Started = DateTime.UtcNow };
+                var card = new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(12, 9, 12, 9),
+                    Margin = new Thickness(0, 0, 0, 6)
+                };
+                Theme.BindElement(card, BackgroundProperty, "nn.RowHover");
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+                var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+                var name = new TextBlock { Text = device.DisplayName, FontSize = 12.5, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+                BindInk(name);
+                names.Children.Add(name);
+                row.Phase = new TextBlock { Text = "等待开始", FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 2, 0, 0) };
+                BindLabel(row.Phase);
+                names.Children.Add(row.Phase);
+                grid.Children.Add(names);
+                row.Track = new Border { Height = 5, CornerRadius = new CornerRadius(2.5), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true };
+                Theme.BindElement(row.Track, BackgroundProperty, "nn.Chip");
+                row.Fill = new Border { Width = 0, CornerRadius = new CornerRadius(2.5), HorizontalAlignment = HorizontalAlignment.Left };
+                Theme.BindElement(row.Fill, BackgroundProperty, "nn.Pink");
+                row.Track.Child = row.Fill;
+                var current = row;
+                row.Track.SizeChanged += delegate { SyncApkRowFill(current); };
+                Grid.SetColumn(row.Track, 1);
+                grid.Children.Add(row.Track);
+                row.Pct = new TextBlock { Text = "0%", FontSize = 11, FontFamily = MonoFont, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                BindInk(row.Pct);
+                Grid.SetColumn(row.Pct, 2);
+                grid.Children.Add(row.Pct);
+                card.Child = grid;
+                apkRowsPanel.Children.Add(card);
+                apkRows[device.Serial] = row;
+            }
+            if (apkRowsHeader != null)
+                apkRowsHeader.Visibility = targets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (apkIdleHint != null)
+                apkIdleHint.Visibility = targets.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        static void SyncApkRowFill(ApkRow row)
+        {
+            if (row == null || row.Track == null || row.Fill == null)
+                return;
+            var w = row.Track.ActualWidth;
+            row.Fill.Width = w <= 0 ? 0 : w * (row.Value / 100.0);
+        }
+
+        // state: 0 进行中，1 成功，2 失败。pct < 0 表示只更新文案。
+        void UpdateApkRow(string serial, double pct, string text, int state)
+        {
+            ApkRow row;
+            if (string.IsNullOrEmpty(serial) || !apkRows.TryGetValue(serial, out row))
+                return;
+            if (row.State != 0 && state == 0)
+                return;
+            if (pct >= 0)
+            {
+                if (pct > 100)
+                    pct = 100;
+                if (pct > row.Value)
+                    row.Value = pct;
+            }
+            if (state != 0)
+            {
+                row.State = state;
+                row.Value = 100;
+            }
+            SyncApkRowFill(row);
+            if (row.State == 1)
+            {
+                Theme.BindElement(row.Fill, BackgroundProperty, "nn.Ok");
+                row.Pct.Text = "✓";
+                row.Pct.SetResourceReference(TextBlock.ForegroundProperty, "nn.Ok");
+            }
+            else if (row.State == 2)
+            {
+                Theme.BindElement(row.Fill, BackgroundProperty, "nn.Red");
+                row.Pct.Text = "✕";
+                row.Pct.SetResourceReference(TextBlock.ForegroundProperty, "nn.Red");
+            }
+            else
+            {
+                row.Pct.Text = ((int)Math.Round(row.Value)).ToString(CultureInfo.InvariantCulture) + "%";
+            }
+            if (text != null)
+            {
+                row.Phase.Text = text;
+                row.Phase.SetResourceReference(TextBlock.ForegroundProperty, row.State == 1 ? "nn.Ok" : row.State == 2 ? "nn.Red" : "nn.Label");
+            }
+        }
+
+        string ApkRowElapsed(string serial)
+        {
+            ApkRow row;
+            if (string.IsNullOrEmpty(serial) || !apkRows.TryGetValue(serial, out row))
+                return "";
+            var sec = (int)(DateTime.UtcNow - row.Started).TotalSeconds;
+            if (sec < 60)
+                return sec.ToString(CultureInfo.InvariantCulture) + " 秒";
+            return (sec / 60).ToString(CultureInfo.InvariantCulture) + " 分 " + (sec % 60).ToString(CultureInfo.InvariantCulture) + " 秒";
+        }
+
+        void RowText(string serial, string text, int state)
+        {
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (state == 1)
+                    text = text + " · " + ApkRowElapsed(serial);
+                UpdateApkRow(serial, -1, text, state);
+            }));
+        }
+
+        void ShowApkFile(string path, int index, int total)
+        {
+            if (apkFileChip == null)
+                return;
+            apkFileChip.Visibility = Visibility.Visible;
+            apkFileName.Text = Path.GetFileName(path) + (total > 1 ? "（" + index.ToString(CultureInfo.InvariantCulture) + "/" + total.ToString(CultureInfo.InvariantCulture) + "）" : "");
+            long size = 0;
+            try { size = new FileInfo(path).Length; }
+            catch { }
+            apkFileMeta.Text = Paths.FormatSize(size) + " · " + (Path.GetDirectoryName(path) ?? "");
         }
 
         void ClearApkLog()
@@ -1174,6 +1968,7 @@ namespace Nanally
             busy = true;
             UpdateButtons();
             ClearApkLog();
+            ResetApkRows(ready);
             apkProgressStartedUtc = DateTime.UtcNow;
             WhatHappened.Info("安装 APK 开始 files=" + paths.Count.ToString(CultureInfo.InvariantCulture)
                 + " devices=" + ready.Count.ToString(CultureInfo.InvariantCulture)
@@ -1187,9 +1982,19 @@ namespace Nanally
             {
                 var counts = new int[2]; // 0=ok, 1=fail
                 var countLock = new object();
+                var apkIndex = 0;
                 foreach (var apkPath in paths)
                 {
+                    apkIndex++;
                     var fileName = Path.GetFileName(apkPath);
+                    var shownPath = apkPath;
+                    var shownIndex = apkIndex;
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        if (shownIndex > 1)
+                            ResetApkRows(ready);
+                        ShowApkFile(shownPath, shownIndex, paths.Count);
+                    }));
                     string packageName = null;
                     string packageError = null;
                     if (uninstallFirst)
@@ -1208,6 +2013,8 @@ namespace Nanally
                                 AppendApkLog(msg, Theme.Red);
                                 SetStatus(msg, Theme.Red);
                             }));
+                            foreach (var d in ready)
+                                RowText(d.Serial, "读包名失败：" + (packageError ?? "未知错误"), 2);
                             continue;
                         }
                     }
@@ -1243,9 +2050,12 @@ namespace Nanally
                             }
                             avg = deviceCount <= 0 ? 0 : (sum / deviceCount);
                         }
+                        var rowSerial = serial;
+                        var rowPct = pct;
                         Dispatcher.BeginInvoke(new Action(delegate
                         {
                             ShowApkProgress(null, avg, false);
+                            UpdateApkRow(rowSerial, rowPct, null, 0);
                         }));
                     };
 
@@ -1283,7 +2093,7 @@ namespace Nanally
                     if (counts[1] == 0)
                     {
                         ShowApkProgress(null, 100, false);
-                        SetStatus("全部完成：成功 " + counts[0].ToString(CultureInfo.InvariantCulture) + " 次", Theme.PinkSoft);
+                        SetStatus("全部完成：成功 " + counts[0].ToString(CultureInfo.InvariantCulture) + " 次", Theme.Ok);
                     }
                     else
                     {
@@ -1327,6 +2137,8 @@ namespace Nanally
                 {
                     var mapped = lastPct >= 0 ? (10 + lastPct * 0.65) : 12;
                     bump(mapped);
+                    RowText(serial, "推送中 · 已等 " + sec.ToString(CultureInfo.InvariantCulture) + "s"
+                        + (lastPct >= 0 ? " · " + lastPct.ToString(CultureInfo.InvariantCulture) + "%" : ""), 0);
                     if (!parallel)
                     {
                         Dispatcher.BeginInvoke(new Action(delegate
@@ -1339,6 +2151,7 @@ namespace Nanally
                 else if (string.Equals(phase, "install", StringComparison.Ordinal))
                 {
                     bump(useAdbInstall && lastPct >= 0 ? (10 + lastPct * 0.8) : 88);
+                    RowText(serial, (useAdbInstall ? "adb install" : "pm install") + " · 已等 " + sec.ToString(CultureInfo.InvariantCulture) + "s，可能在等手机确认", 0);
                     if (!parallel)
                     {
                         Dispatcher.BeginInvoke(new Action(delegate
@@ -1368,6 +2181,7 @@ namespace Nanally
                         lastUi = now;
                         var mapped = useAdbInstall ? (10 + pct * 0.8) : (10 + pct * 0.65);
                         bump(mapped);
+                        RowText(serial, (useAdbInstall ? "安装中 " : "推送中 ") + pct.ToString(CultureInfo.InvariantCulture) + "%", 0);
                         Dispatcher.BeginInvoke(new Action(delegate
                         {
                             var verb = useAdbInstall ? "安装" : "推送";
@@ -1395,6 +2209,7 @@ namespace Nanally
                 if (string.Equals(phase, "push", StringComparison.Ordinal))
                 {
                     bump(10);
+                    RowText(serial, "开始推送", 0);
                     Dispatcher.BeginInvoke(new Action(delegate
                     {
                         AppendApkLog(label + " · 开始推送（push）", Theme.Ink);
@@ -1403,6 +2218,7 @@ namespace Nanally
                 else if (string.Equals(phase, "install", StringComparison.Ordinal))
                 {
                     bump(useAdbInstall ? 10 : 85);
+                    RowText(serial, useAdbInstall ? "adb install 中" : "推送完成，pm install 中", 0);
                     Dispatcher.BeginInvoke(new Action(delegate
                     {
                         if (useAdbInstall)
@@ -1426,6 +2242,7 @@ namespace Nanally
             try
             {
                 bump(4);
+                RowText(serial, "准备中", 0);
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     AppendApkLog(label + " · 开始（" + (useAdbInstall ? "adb install" : "push + pm install") + "）", Theme.Ink);
@@ -1440,6 +2257,7 @@ namespace Nanally
                         phase = "uninstall";
                         phaseStarted = DateTime.UtcNow;
                         bump(8);
+                        RowText(serial, "卸载旧包…", 0);
                         var un = Apk.Uninstall(adb, device.Serial, packageName, onAdbLine);
                         if (un.TimedOut || un.ExitCode != 0)
                         {
@@ -1447,6 +2265,7 @@ namespace Nanally
                             bump(100);
                             var detail = Adb.FirstLine(un.Stderr.Length > 0 ? un.Stderr : un.Stdout);
                             var msg = label + " 卸载失败" + (string.IsNullOrEmpty(detail) ? "" : "：" + detail);
+                            RowText(serial, "卸载失败" + (string.IsNullOrEmpty(detail) ? "" : "：" + detail), 2);
                             Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(msg, Theme.Red); }));
                             return;
                         }
@@ -1460,6 +2279,7 @@ namespace Nanally
                     lock (countLock) { counts[1]++; }
                     bump(100);
                     Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(label + " 安装超时（可看手机是否还在等确认）", Theme.Red); }));
+                    RowText(serial, "安装超时，看看手机是不是还在等确认", 2);
                     return;
                 }
                 var outText = ((installed.Stdout ?? "") + "\n" + (installed.Stderr ?? "")).ToLowerInvariant();
@@ -1482,8 +2302,9 @@ namespace Nanally
                     lock (countLock) { counts[0]++; }
                     Dispatcher.BeginInvoke(new Action(delegate
                     {
-                        AppendApkLog(label + " 安装成功", Theme.PinkSoft);
+                        AppendApkLog(label + " 安装成功", Theme.Ok);
                     }));
+                    RowText(serial, "安装成功", 1);
                 }
                 else
                 {
@@ -1493,6 +2314,7 @@ namespace Nanally
                         detail = "exit " + installed.ExitCode.ToString(CultureInfo.InvariantCulture);
                     var msg = label + " 安装失败" + (string.IsNullOrEmpty(detail) ? "" : "：" + detail);
                     Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(msg, Theme.Red); }));
+                    RowText(serial, "安装失败" + (string.IsNullOrEmpty(detail) ? "" : "：" + detail), 2);
                 }
             }
             finally
@@ -1540,17 +2362,16 @@ namespace Nanally
         {
             var header = new Border
             {
-                Height = 28,
-                CornerRadius = new CornerRadius(13, 13, 0, 0),
-                Padding = new Thickness(0)
+                Height = 32,
+                Padding = new Thickness(6, 0, 6, 0),
+                BorderThickness = new Thickness(0, 0, 0, 1)
             };
-            Theme.BindElement(header, BackgroundProperty, "nn.CardSoft");
+            Theme.BindElement(header, Border.BorderBrushProperty, "nn.Hairline");
             var grid = HeaderGrid(media);
-            AddHeader(grid, 0, media ? "" : "");
-            AddHeader(grid, 1, "名称");
-            AddHeader(grid, 2, "修改时间");
-            AddHeader(grid, 3, "大小");
-            AddHeader(grid, 4, media ? "来源" : "类型");
+            AddHeader(grid, 1, "名称", false);
+            AddHeader(grid, 2, "修改时间", false);
+            AddHeader(grid, 3, "大小", true);
+            AddHeader(grid, 4, "文件数", true);
             header.Child = grid;
             return header;
         }
@@ -1558,24 +2379,26 @@ namespace Nanally
         static Grid HeaderGrid(bool media)
         {
             var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(media ? 36 : 8) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.2, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
             return grid;
         }
 
-        static void AddHeader(Grid grid, int col, string text)
+        static void AddHeader(Grid grid, int col, string text, bool right)
         {
             var block = new TextBlock
             {
                 Text = text,
-                FontSize = 12,
+                FontSize = 11.5,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 0, 0)
+                HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                Margin = new Thickness(8, 0, right ? 12 : 8, 0)
             };
             BindLabel(block);
+            block.Opacity = 0.85;
             Grid.SetColumn(block, col);
             grid.Children.Add(block);
         }
@@ -1584,15 +2407,14 @@ namespace Nanally
         {
             var footer = new Border
             {
-                Margin = new Thickness(12, 0, 12, 10),
+                Margin = new Thickness(12, 0, 12, 12),
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(16, 10, 16, 12)
+                Padding = new Thickness(16, 8, 8, 8),
+                MinHeight = 48
             };
             Theme.BindElement(footer, BackgroundProperty, "nn.Card");
             ClipRound(footer, 14);
-            var stack = new StackPanel();
-
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1600,13 +2422,13 @@ namespace Nanally
             {
                 Text = "连上手机，点一下就拷贝",
                 FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 12, 0)
             };
             statusText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Label");
             row.Children.Add(statusText);
-            footerRightHost = new Grid { MinWidth = 180, VerticalAlignment = VerticalAlignment.Center };
+            footerRightHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
             footerButtons = new StackPanel { Orientation = Orientation.Horizontal };
             openCurrentButton = SmallButton("打开文件夹");
             openCurrentButton.Margin = new Thickness(0, 0, 8, 0);
@@ -1614,14 +2436,11 @@ namespace Nanally
             copyButton = MakePrimary("拷贝日志");
             copyButton.IsEnabled = false;
             copyButton.Click += delegate { StartCopy(); };
-            sendButton = MakePrimary("发给自己");
-            sendButton.Visibility = Visibility.Collapsed;
-            sendButton.Click += delegate { SendSelectedAsync(); };
             footerButtons.Children.Add(openCurrentButton);
             footerButtons.Children.Add(copyButton);
-            footerButtons.Children.Add(sendButton);
             footerRightHost.Children.Add(footerButtons);
 
+            // 总进度条保留（安装逻辑仍在算），界面上改由每台手机一行进度展示。
             apkProgressHost = new Grid { Visibility = Visibility.Collapsed, MinWidth = 200 };
             apkProgressHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             apkProgressHost.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1635,8 +2454,6 @@ namespace Nanally
                 ClipToBounds = true
             };
             Theme.BindElement(apkProgressTrack, BackgroundProperty, "nn.Chip");
-            Theme.BindElement(apkProgressTrack, Border.BorderBrushProperty, "nn.Hairline");
-            apkProgressTrack.BorderThickness = new Thickness(1);
             apkProgressFill = new Border
             {
                 Width = 0,
@@ -1648,17 +2465,8 @@ namespace Nanally
             Theme.BindElement(apkProgressFill, BackgroundProperty, "nn.Pink");
             apkProgressTrack.Child = apkProgressFill;
             apkProgressTrack.SizeChanged += delegate { SyncApkProgressFill(); };
-            Grid.SetColumn(apkProgressTrack, 0);
             apkProgressHost.Children.Add(apkProgressTrack);
-            apkProgressText = new TextBlock
-            {
-                Text = "0%",
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-                MinWidth = 44,
-                TextAlignment = TextAlignment.Right
-            };
+            apkProgressText = new TextBlock { Text = "0%", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, MinWidth = 44, TextAlignment = TextAlignment.Right };
             BindInk(apkProgressText);
             Grid.SetColumn(apkProgressText, 1);
             apkProgressHost.Children.Add(apkProgressText);
@@ -1666,8 +2474,7 @@ namespace Nanally
 
             Grid.SetColumn(footerRightHost, 1);
             row.Children.Add(footerRightHost);
-            stack.Children.Add(row);
-            footer.Child = stack;
+            footer.Child = row;
             return footer;
         }
 
@@ -1698,6 +2505,7 @@ namespace Nanally
                 Height = 32,
                 Padding = new Thickness(12, 0, 12, 0),
                 Cursor = Cursors.Hand,
+                Focusable = false,
                 FontSize = 12
             };
             btn.SetResourceReference(Control.ForegroundProperty, "nn.Ink");
@@ -1708,14 +2516,19 @@ namespace Nanally
 
         static ControlTemplate OutlineButtonTemplate()
         {
+            return OutlineButtonTemplate(new Thickness(12, 0, 12, 0), Theme.CardSoft);
+        }
+
+        static ControlTemplate OutlineButtonTemplate(Thickness padding, Brush normal)
+        {
             var template = new ControlTemplate(typeof(Button));
             var border = new FrameworkElementFactory(typeof(Border));
             border.Name = "Bd";
-            Theme.Bind(border, Border.BackgroundProperty, Theme.CardSoft);
+            Theme.Bind(border, Border.BackgroundProperty, normal);
             Theme.Bind(border, Border.BorderBrushProperty, Theme.Hairline);
             border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-            border.SetValue(Border.PaddingProperty, new Thickness(12, 0, 12, 0));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+            border.SetValue(Border.PaddingProperty, padding);
             var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
             presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
             presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
@@ -1794,16 +2607,15 @@ namespace Nanally
 
         void ApplyLogsPath(string path)
         {
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path.Trim()))
             {
                 SetStatus("目录不存在", Theme.Red);
                 return;
             }
+            path = path.Trim();
             logsBrowsePath = path;
             settings.LogsDir = path;
             settings.Save();
-            if (logsPathBox != null)
-                logsPathBox.Text = path;
             RefreshLogsList();
         }
 
@@ -1815,8 +2627,6 @@ namespace Nanally
             if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
                 return;
             logsBrowsePath = parent;
-            if (logsPathBox != null)
-                logsPathBox.Text = parent;
             RefreshLogsList();
         }
 
@@ -1825,33 +2635,143 @@ namespace Nanally
             if (logsRows == null)
                 return;
             logsRows.Children.Clear();
+            var gen = ++logsGeneration;
+            SetLogsPathText(logsBrowsePath);
             if (string.IsNullOrEmpty(logsBrowsePath) || !Directory.Exists(logsBrowsePath))
             {
                 logsEmpty.Text = "目录不存在";
                 logsEmpty.Visibility = Visibility.Visible;
                 return;
             }
-            if (logsPathBox != null)
-                logsPathBox.Text = logsBrowsePath;
-            var dirs = new List<DirectoryInfo>(new DirectoryInfo(logsBrowsePath).GetDirectories());
-            dirs.Sort(delegate(DirectoryInfo a, DirectoryInfo b) { return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); });
-            var files = new List<FileInfo>(new DirectoryInfo(logsBrowsePath).GetFiles());
-            files.Sort(delegate(FileInfo a, FileInfo b) { return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); });
+            List<DirectoryInfo> dirs;
+            List<FileInfo> files;
+            try
+            {
+                dirs = new List<DirectoryInfo>(new DirectoryInfo(logsBrowsePath).GetDirectories());
+                files = new List<FileInfo>(new DirectoryInfo(logsBrowsePath).GetFiles());
+            }
+            catch (Exception ex)
+            {
+                logsEmpty.Text = "打不开这个目录：" + ex.Message;
+                logsEmpty.Visibility = Visibility.Visible;
+                return;
+            }
+            dirs.RemoveAll(delegate(DirectoryInfo d) { return d.Name.StartsWith(".nanally", StringComparison.OrdinalIgnoreCase); });
+            dirs.Sort(delegate(DirectoryInfo a, DirectoryInfo b) { return b.LastWriteTime.CompareTo(a.LastWriteTime); });
+            files.Sort(delegate(FileInfo a, FileInfo b) { return b.LastWriteTime.CompareTo(a.LastWriteTime); });
+            var pending = new List<KeyValuePair<string, TextBlock[]>>();
             foreach (var dir in dirs)
-                logsRows.Children.Add(LocalRow(dir.Name, dir.LastWriteTime, "", "文件夹", dir.FullName, true));
+            {
+                TextBlock sizeCell;
+                TextBlock countCell;
+                logsRows.Children.Add(LocalRow(dir.Name, dir.LastWriteTime, "", dir.FullName, true, out sizeCell, out countCell));
+                // 只统计「设备名+时间」快照目录，避免浏览到盘根时递归整个磁盘。
+                if (SnapshotPattern.IsMatch(dir.Name))
+                    pending.Add(new KeyValuePair<string, TextBlock[]>(dir.FullName, new[] { sizeCell, countCell }));
+            }
             foreach (var file in files)
-                logsRows.Children.Add(LocalRow(file.Name, file.LastWriteTime, Paths.FormatSize(file.Length), "文件", file.FullName, false));
+            {
+                TextBlock sizeCell;
+                TextBlock countCell;
+                logsRows.Children.Add(LocalRow(file.Name, file.LastWriteTime, Paths.FormatSize(file.Length), file.FullName, false, out sizeCell, out countCell));
+            }
             logsEmpty.Visibility = logsRows.Children.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             logsEmpty.Text = "这个目录是空的";
+            if (pending.Count == 0)
+                return;
+            Task.Run(delegate
+            {
+                foreach (var entry in pending)
+                {
+                    if (gen != logsGeneration)
+                        return;
+                    long bytes = 0;
+                    var count = 0;
+                    try
+                    {
+                        foreach (var path in Directory.GetFiles(entry.Key, "*", SearchOption.AllDirectories))
+                        {
+                            count++;
+                            try { bytes += new FileInfo(path).Length; }
+                            catch { }
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                    var cells = entry.Value;
+                    var sizeText = Paths.FormatSize(bytes);
+                    var countText = count.ToString(CultureInfo.InvariantCulture);
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        if (gen != logsGeneration)
+                            return;
+                        cells[0].Text = sizeText;
+                        cells[1].Text = countText;
+                    }));
+                }
+            });
         }
 
-        Border LocalRow(string name, DateTime when, string size, string kind, string full, bool folder)
+        static readonly Regex SnapshotPattern = new Regex(@"^(.+)\+(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(_\d+)?$");
+
+        Border LocalRow(string name, DateTime when, string size, string full, bool folder, out TextBlock sizeCell, out TextBlock countCell)
         {
             var row = MakeRow(false);
-            AddCell(row, 1, name, true);
-            AddCell(row, 2, when.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), false);
-            AddCell(row, 3, size, false);
-            AddCell(row, 4, kind, false);
+            var grid = row.Child as Grid;
+            var highlight = folder && !string.IsNullOrEmpty(logsHighlight)
+                && string.Equals(full.TrimEnd('\\'), logsHighlight.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            if (highlight)
+            {
+                row.Tag = Theme.Selected;
+                row.Background = Theme.Selected;
+            }
+
+            var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) };
+            nameRow.Children.Add(folder ? FolderGlyph() : FileGlyph());
+            var match = folder ? SnapshotPattern.Match(name) : null;
+            if (match != null && match.Success)
+            {
+                var device = new TextBlock { Text = match.Groups[1].Value, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+                BindInk(device);
+                nameRow.Children.Add(device);
+                var stamp = new TextBlock
+                {
+                    Text = match.Groups[2].Value + match.Groups[3].Value,
+                    FontFamily = MonoFont,
+                    FontSize = 11.5,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(10, 1, 0, 0)
+                };
+                BindLabel(stamp);
+                nameRow.Children.Add(stamp);
+            }
+            else
+            {
+                var plain = new TextBlock { Text = name, FontSize = 13, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(10, 0, 0, 0) };
+                BindInk(plain);
+                nameRow.Children.Add(plain);
+            }
+            if (highlight)
+            {
+                TextBlock pillText;
+                var pill = Pill("刚刚", out pillText);
+                pill.Margin = new Thickness(10, 0, 0, 0);
+                PaintPill(pill, pillText, "nn.Pink", "nn.AccentSoft");
+                nameRow.Children.Add(pill);
+            }
+            Grid.SetColumn(nameRow, 1);
+            grid.Children.Add(nameRow);
+
+            var whenText = when.Year == DateTime.Now.Year
+                ? when.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)
+                : when.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            grid.Children.Add(Cell(whenText, 2, false));
+            sizeCell = Cell(size, 3, true);
+            grid.Children.Add(sizeCell);
+            countCell = Cell("", 4, true);
+            grid.Children.Add(countCell);
             row.MouseLeftButtonUp += delegate
             {
                 if (folder)
@@ -1860,9 +2780,41 @@ namespace Nanally
                     RefreshLogsList();
                     return;
                 }
-                Process.Start(new ProcessStartInfo { FileName = full, UseShellExecute = true });
+                try { Process.Start(new ProcessStartInfo { FileName = full, UseShellExecute = true }); }
+                catch (Exception ex) { SetStatus("打不开：" + ex.Message, Theme.Orange); }
             };
             return row;
+        }
+
+        static TextBlock Cell(string text, int col, bool right)
+        {
+            var block = new TextBlock
+            {
+                Text = text,
+                FontFamily = MonoFont,
+                FontSize = 11.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                Margin = new Thickness(8, 0, right ? 12 : 8, 0)
+            };
+            BindLabel(block);
+            Grid.SetColumn(block, col);
+            return block;
+        }
+
+        static UIElement FolderGlyph()
+        {
+            var host = new Grid { Width = 16, Height = 13, VerticalAlignment = VerticalAlignment.Center };
+            host.Children.Add(new Border { Width = 7, Height = 4, CornerRadius = new CornerRadius(1.5, 1.5, 0, 0), Background = B("#E8B04B"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
+            host.Children.Add(new Border { Height = 10, CornerRadius = new CornerRadius(2), Background = B("#E8B04B"), VerticalAlignment = VerticalAlignment.Bottom });
+            return host;
+        }
+
+        static UIElement FileGlyph()
+        {
+            var glyph = new TextBlock { Text = "", FontFamily = Theme.IconFont, FontSize = 14, Width = 16, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+            BindLabel(glyph);
+            return glyph;
         }
 
         void RefreshMediaAsync()
@@ -1871,11 +2823,14 @@ namespace Nanally
                 return;
             if (selected == null || !selected.IsReady || adbExe == null)
             {
-                SetStatus("先连上一台已授权的手机", Theme.Orange);
+                UpdateMediaEmpty();
                 return;
             }
             busy = true;
+            mediaLoading = true;
+            mediaLoadError = null;
             UpdateButtons();
+            UpdateMediaEmpty();
             SetStatus("正在读取手机上的截图和录屏…", Theme.Label);
             var adb = adbExe;
             var serial = selected.Serial;
@@ -1888,6 +2843,25 @@ namespace Nanally
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     busy = false;
+                    mediaLoading = false;
+                    mediaLoadError = error;
+                    if (selected == null || selected.Serial != serial)
+                    {
+                        UpdateButtons();
+                        UpdateMediaEmpty();
+                        return;
+                    }
+                    var keep = new Dictionary<string, bool>(StringComparer.Ordinal);
+                    foreach (var old in mediaItems)
+                    {
+                        if (old.IsChecked)
+                            keep[old.RemotePath] = true;
+                    }
+                    foreach (var item in found)
+                    {
+                        if (keep.ContainsKey(item.RemotePath))
+                            item.IsChecked = true;
+                    }
                     mediaItems.Clear();
                     mediaItems.AddRange(found);
                     ResetThumbs();
@@ -2024,63 +2998,132 @@ namespace Nanally
             if (mediaTiles == null)
                 return;
             mediaTiles.Children.Clear();
-            var filter = mediaFilter == null ? 0 : mediaFilter.SelectedIndex;
-            var shown = 0;
+            mediaTileCards.Clear();
+            mediaTileFrames.Clear();
             var ordered = new List<MediaItem>();
             foreach (var item in mediaItems)
             {
-                if (filter == 1 && item.IsVideo)
+                item.CheckHost = null;
+                item.RingHost = null;
+                if (mediaFilterIndex == 1 && item.IsVideo)
                     continue;
-                if (filter == 2 && !item.IsVideo)
+                if (mediaFilterIndex == 2 && !item.IsVideo)
                     continue;
                 ordered.Add(item);
             }
             ordered.Sort(CompareMediaNewestFirst);
+            mediaOrdered = ordered;
+            // 按月分组；相邻的稀疏月份合并成一段，避免每个月只有一两张时一行一个标题。
+            var bucketOf = new Dictionary<MediaItem, int>();
+            var bucketLabels = new List<string>();
+            var bucketCounts = new List<int>();
+            string firstKey = null;
+            string lastKeySeen = null;
+            var run = 0;
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var key = MediaGroupKey(ordered[i].DateTicks);
+                if (key != lastKeySeen && lastKeySeen != null && run >= 4)
+                {
+                    bucketLabels.Add(firstKey == lastKeySeen ? firstKey : firstKey + " – " + lastKeySeen);
+                    bucketCounts.Add(run);
+                    run = 0;
+                    firstKey = null;
+                }
+                if (firstKey == null)
+                {
+                    firstKey = key;
+                }
+                lastKeySeen = key;
+                run++;
+                bucketOf[ordered[i]] = bucketLabels.Count;
+            }
+            if (run > 0)
+            {
+                bucketLabels.Add(firstKey == lastKeySeen ? firstKey : firstKey + " – " + lastKeySeen);
+                bucketCounts.Add(run);
+            }
+            var lastBucket = -1;
+            WrapPanel wrap = null;
             foreach (var item in ordered)
             {
-                mediaTiles.Children.Add(MediaTile(item));
-                shown++;
+                var bucket = bucketOf[item];
+                if (bucket != lastBucket)
+                {
+                    lastBucket = bucket;
+                    var head = new TextBlock { Margin = new Thickness(2, mediaTiles.Children.Count == 0 ? 2 : 10, 0, 10) };
+                    head.Inlines.Add(new Run(bucketLabels[bucket]) { FontSize = 13, FontWeight = FontWeights.SemiBold });
+                    var countRun = new Run("   " + bucketCounts[bucket].ToString(CultureInfo.InvariantCulture) + " 项") { FontSize = 11.5 };
+                    countRun.SetResourceReference(TextElement.ForegroundProperty, "nn.Label");
+                    head.Inlines.Add(countRun);
+                    BindInk(head);
+                    mediaTiles.Children.Add(head);
+                    wrap = new WrapPanel { Margin = new Thickness(0, 0, -MediaGap, 0) };
+                    mediaTiles.Children.Add(wrap);
+                }
+                wrap.Children.Add(MediaTile(item));
             }
-            mediaEmpty.Visibility = shown == 0 ? Visibility.Visible : Visibility.Collapsed;
-            mediaEmpty.Text = mediaItems.Count == 0 ? "正在读取或点「读取设备」" : "这个筛选下没有文件";
+            mediaVisibleCount = ordered.Count;
+            PaintSegments();
+            UpdateMediaEmpty();
             UpdateMediaCount();
+            lastFitWidth = -1;
             FitMediaTiles();
             foreach (var item in ordered)
                 EnqueueThumb(item);
+        }
+
+        static string MediaGroupKey(long ticks)
+        {
+            if (ticks <= 0)
+                return "更早";
+            var day = new DateTime(ticks).Date;
+            var today = DateTime.Today;
+            if (day == today)
+                return "今天";
+            if (day == today.AddDays(-1))
+                return "昨天";
+            if (day.Year == today.Year)
+                return day.Month.ToString(CultureInfo.InvariantCulture) + " 月";
+            return day.Year.ToString(CultureInfo.InvariantCulture) + " 年 " + day.Month.ToString(CultureInfo.InvariantCulture) + " 月";
         }
 
         Border MediaTile(MediaItem item)
         {
             var tile = new Border
             {
-                Width = 148,
-                Margin = new Thickness(4),
-                Padding = new Thickness(6, 6, 6, 8),
-                CornerRadius = new CornerRadius(8),
-                BorderThickness = new Thickness(1),
+                Width = 180,
+                Margin = new Thickness(0, 0, MediaGap, MediaGap),
+                Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Top,
                 ToolTip = BuildMediaTip(item)
             };
             var stack = new StackPanel();
+            var ring = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(2),
+                Padding = new Thickness(2),
+                BorderBrush = Brushes.Transparent
+            };
             var frame = new Border
             {
-                Width = 136,
-                Height = 102,
+                Height = 78,
                 Background = B("#111111"),
-                CornerRadius = new CornerRadius(4),
-                ClipToBounds = true
+                CornerRadius = new CornerRadius(6)
             };
+            ClipRound(frame, 6);
             var box = new Grid();
             var hint = new TextBlock
             {
                 Text = item.IsVideo ? "▶" : "图",
                 Foreground = Theme.Label,
-                FontSize = item.IsVideo ? 22 : 13,
+                FontSize = item.IsVideo ? 18 : 12,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var image = new Image { Stretch = Stretch.Uniform };
+            var image = new Image { Stretch = Stretch.UniformToFill, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             if (item.Thumb != null)
             {
                 image.Source = item.Thumb;
@@ -2094,18 +3137,19 @@ namespace Nanally
             {
                 var play = new Border
                 {
-                    Width = 22,
-                    Height = 22,
-                    CornerRadius = new CornerRadius(11),
-                    Background = B("#CCEC4899"),
+                    Width = 20,
+                    Height = 20,
+                    CornerRadius = new CornerRadius(10),
+                    Background = B("#99000000"),
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Bottom,
-                    Margin = new Thickness(0, 0, 4, 4),
+                    Margin = new Thickness(0, 0, 5, 5),
+                    ToolTip = "预览",
                     Child = new TextBlock
                     {
                         Text = "▶",
                         Foreground = Brushes.White,
-                        FontSize = 9,
+                        FontSize = 8,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         Margin = new Thickness(1, 0, 0, 0)
@@ -2130,26 +3174,31 @@ namespace Nanally
                 Cursor = Cursors.Hand,
                 Template = DotCheckTemplate()
             };
-            check.Checked += delegate { item.IsChecked = true; PaintDot(check); PaintTile(tile, item, tile.IsMouseOver); UpdateMediaCount(); };
-            check.Unchecked += delegate { item.IsChecked = false; PaintDot(check); PaintTile(tile, item, tile.IsMouseOver); UpdateMediaCount(); };
+            check.Checked += delegate { item.IsChecked = true; PaintDot(check); PaintTile(ring, item, tile.IsMouseOver); UpdateMediaCount(); };
+            check.Unchecked += delegate { item.IsChecked = false; PaintDot(check); PaintTile(ring, item, tile.IsMouseOver); UpdateMediaCount(); };
             check.Loaded += delegate { PaintDot(check); };
             check.IsChecked = item.IsChecked;
+            item.CheckHost = check;
+            item.RingHost = ring;
             box.Children.Add(check);
             frame.Child = box;
-            stack.Children.Add(frame);
-            stack.Children.Add(new TextBlock
-            {
-                Text = item.Name,
-                Foreground = Theme.Ink,
-                FontSize = 12,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxHeight = 34,
-                Margin = new Thickness(2, 6, 2, 0)
-            });
+            ring.Child = frame;
+            stack.Children.Add(ring);
+
+            var caption = new Grid { Margin = new Thickness(4, 3, 4, 0) };
+            var when = new TextBlock { Text = ShortMediaTime(item), FontFamily = MonoFont, FontSize = 11 };
+            BindLabel(when);
+            caption.Children.Add(when);
+            var size = new TextBlock { Text = Paths.FormatSize(item.Size), FontFamily = MonoFont, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Right };
+            BindLabel(size);
+            size.Opacity = 0.8;
+            caption.Children.Add(size);
+            stack.Children.Add(caption);
             tile.Child = stack;
-            PaintTile(tile, item, false);
+            PaintTile(ring, item, false);
+            mediaTileCards.Add(tile);
+            mediaTileFrames.Add(frame);
+
             var clicks = 0;
             tile.PreviewMouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e)
             {
@@ -2163,15 +3212,21 @@ namespace Nanally
             {
                 if (IsCheckBox(e.OriginalSource as DependencyObject) || IsPlayBadge(e.OriginalSource as DependencyObject) || clicks >= 2)
                     return;
-                item.IsChecked = !item.IsChecked;
-                check.IsChecked = item.IsChecked;
-                PaintDot(check);
-                PaintTile(tile, item, true);
-                UpdateMediaCount();
+                check.IsChecked = !item.IsChecked;
             };
-            tile.MouseEnter += delegate { PaintTile(tile, item, true); };
-            tile.MouseLeave += delegate { PaintTile(tile, item, false); };
+            tile.MouseEnter += delegate { PaintTile(ring, item, true); };
+            tile.MouseLeave += delegate { PaintTile(ring, item, false); };
             return tile;
+        }
+
+        static string ShortMediaTime(MediaItem item)
+        {
+            if (item.DateTicks <= 0)
+                return item.DateText ?? "";
+            var when = new DateTime(item.DateTicks);
+            return when.Year == DateTime.Now.Year
+                ? when.ToString("MM-dd HH:mm", CultureInfo.InvariantCulture)
+                : when.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
         static ControlTemplate DotCheckTemplate()
@@ -2231,34 +3286,28 @@ namespace Nanally
             return false;
         }
 
-        static void PaintTile(Border tile, MediaItem item, bool hover)
+        static void PaintTile(Border ring, MediaItem item, bool hover)
         {
+            if (ring == null)
+                return;
             if (item.IsChecked)
-            {
-                tile.Background = Theme.Selected;
-                tile.BorderBrush = Theme.Pink;
-            }
+                ring.BorderBrush = Theme.Pink;
             else if (hover)
-            {
-                tile.Background = Theme.RowHover;
-                tile.BorderBrush = Theme.Hairline;
-            }
+                ring.BorderBrush = Theme.Stroke;
             else
-            {
-                tile.Background = Brushes.Transparent;
-                tile.BorderBrush = Brushes.Transparent;
-            }
+                ring.BorderBrush = Brushes.Transparent;
         }
 
         static ToolTip BuildMediaTip(MediaItem item)
         {
             var stack = new StackPanel();
+            stack.Children.Add(TipLine("名称：", item.Name));
             stack.Children.Add(TipLine("类型：", KindLabel(item)));
             stack.Children.Add(TipLine("大小：", Paths.FormatSize(item.Size)));
             stack.Children.Add(TipLine("修改日期：", FormatMediaDate(item.DateText)));
             return new ToolTip
             {
-                Background = Theme.Card,
+                Background = Theme.Menu,
                 BorderBrush = Theme.Hairline,
                 Padding = new Thickness(10, 8, 10, 8),
                 Content = stack
@@ -2308,18 +3357,51 @@ namespace Nanally
         void UpdateMediaCount()
         {
             var picked = 0;
+            long bytes = 0;
             foreach (var item in mediaItems)
             {
-                if (item.IsChecked)
-                    picked++;
+                if (!item.IsChecked)
+                    continue;
+                picked++;
+                bytes += item.Size;
             }
             if (mediaCount != null)
             {
-                var text = "已选 " + picked.ToString(CultureInfo.InvariantCulture) + " / " + mediaItems.Count.ToString(CultureInfo.InvariantCulture);
-                if (thumbTotal > 0 && thumbDone < thumbTotal)
-                    text += " · 预览 " + thumbDone.ToString(CultureInfo.InvariantCulture) + "/" + thumbTotal.ToString(CultureInfo.InvariantCulture);
-                mediaCount.Text = text;
+                mediaCount.Text = thumbTotal > 0 && thumbDone < thumbTotal
+                    ? "缩略图 " + thumbDone.ToString(CultureInfo.InvariantCulture) + "/" + thumbTotal.ToString(CultureInfo.InvariantCulture)
+                    : "";
             }
+            if (mediaBarTitle != null)
+                mediaBarTitle.Text = "已选 " + picked.ToString(CultureInfo.InvariantCulture) + " 项 · " + Paths.FormatSize(bytes);
+            if (mediaBar != null)
+            {
+                var show = picked > 0;
+                if (show && mediaBar.Visibility != Visibility.Visible && mediaBarStatus != null)
+                {
+                    mediaBarStatus.Text = "";
+                    mediaBarStatus.Visibility = Visibility.Collapsed;
+                }
+                mediaBar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            }
+            var label = picked > 0 ? "发给自己（" + picked.ToString(CultureInfo.InvariantCulture) + "）" : "发给自己";
+            if (sendButton != null)
+                sendButton.Content = busy && currentPage == "media" ? "正在发送…" : label;
+            if (previewSend != null)
+                previewSend.Content = label;
+            if (selectAllButton != null)
+                selectAllButton.Content = AllVisibleChecked() ? "取消全选" : "全选";
+        }
+
+        bool AllVisibleChecked()
+        {
+            var any = false;
+            foreach (var item in mediaOrdered)
+            {
+                if (!item.IsChecked)
+                    return false;
+                any = true;
+            }
+            return any;
         }
 
         Border MakeRow(bool media)
@@ -2328,14 +3410,22 @@ namespace Nanally
             var row = new Border
             {
                 Child = grid,
-                Height = 34,
+                Height = 38,
                 Background = Brushes.Transparent,
-                BorderBrush = Theme.Hairline,
-                BorderThickness = new Thickness(0, 0, 0, 1),
+                CornerRadius = new CornerRadius(8),
                 Cursor = Cursors.Hand
             };
-            row.MouseEnter += delegate { if (row.Background == Brushes.Transparent) row.Background = Theme.RowHover; };
-            row.MouseLeave += delegate { row.Background = Brushes.Transparent; };
+            // Tag 存行的常态底色（高亮行用 Selected），悬停离开时恢复它。
+            row.MouseEnter += delegate
+            {
+                if (row.Tag == null)
+                    row.Background = Theme.RowHover;
+            };
+            row.MouseLeave += delegate
+            {
+                var keep = row.Tag as Brush;
+                row.Background = keep ?? Brushes.Transparent;
+            };
             return row;
         }
 
@@ -2357,16 +3447,17 @@ namespace Nanally
 
         void SetAllChecked(bool value)
         {
-            var filter = mediaFilter == null ? 0 : mediaFilter.SelectedIndex;
             foreach (var item in mediaItems)
             {
-                if (filter == 1 && item.IsVideo)
+                if (mediaFilterIndex == 1 && item.IsVideo)
                     continue;
-                if (filter == 2 && !item.IsVideo)
+                if (mediaFilterIndex == 2 && !item.IsVideo)
                     continue;
                 item.IsChecked = value;
+                if (item.CheckHost != null)
+                    item.CheckHost.IsChecked = value;
             }
-            RenderMediaRows();
+            UpdateMediaCount();
         }
 
         void SendSelectedAsync()
@@ -2418,7 +3509,7 @@ namespace Nanally
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     busy = false;
-                    SetStatus(message, ok ? Theme.PinkSoft : Theme.Red);
+                    SetStatus(message, ok ? Theme.Ok : Theme.Red);
                     if (ok)
                         WhatHappened.Info("飞书发送完成: " + message);
                     else
@@ -2825,10 +3916,10 @@ namespace Nanally
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     busy = false;
-                    SetStatus(message, ok ? Theme.PinkSoft : Theme.Red);
-                    if (settingsHint != null)
-                        settingsHint.Text = message;
+                    SetStatus(message, ok ? Theme.Ok : Theme.Red);
+                    SetSettingsHint(message, ok ? Theme.Ok : Theme.Red);
                     UpdateButtons();
+                    RefreshLarkStatus();
                 }));
             });
         }
@@ -2990,6 +4081,7 @@ namespace Nanally
             setLogsBox.Text = settings.LogsDir;
             setAppIdBox.Text = settings.FeishuAppId;
             setTokenBox.Password = "";
+            UpdateTokenPlaceholder();
             setChatBox.Text = settings.FeishuChatId;
             if (chkFollowSystem != null)
                 chkFollowSystem.IsChecked = settings.FollowSystem;
@@ -3000,24 +4092,24 @@ namespace Nanally
             }
             if (chkGlass != null)
                 chkGlass.IsChecked = settings.EnableGlass;
-            if (cmbAccent != null)
-                cmbAccent.SelectedIndex = settings.Accent == "Blue" ? 0 : settings.Accent == "Green" ? 2 : 1;
+            PaintSwatches();
             applyingTheme = false;
+            SetSettingsHint("", null);
             ShowSettingsSection("look");
         }
 
         Grid BuildSettingsPage()
         {
-            var page = new Grid { Margin = new Thickness(16) };
-            page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
-            page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+            var page = new Grid { Margin = new Thickness(12, 10, 12, 12) };
+            page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
             page.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             settingsNavCard = new Border
             {
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(6)
+                Padding = new Thickness(8)
             };
             Theme.BindElement(settingsNavCard, BackgroundProperty, "nn.Card");
             ClipRound(settingsNavCard, 14);
@@ -3051,7 +4143,7 @@ namespace Nanally
             };
             Theme.BindElement(settingsContentCard, BackgroundProperty, "nn.Card");
             ClipRound(settingsContentCard, 14);
-            var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(22) };
+            var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(24, 20, 24, 20) };
             var host = new Grid();
             panelSetLook = BuildLookSettings();
             panelSetPath = BuildPathSettings();
@@ -3070,16 +4162,49 @@ namespace Nanally
         {
             var btn = new Button
             {
-                Content = text,
-                Margin = new Thickness(2),
-                Padding = new Thickness(10, 10, 10, 10),
+                Margin = new Thickness(0, 0, 0, 2),
+                Height = 36,
+                Padding = new Thickness(0),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 FontSize = 13,
+                Focusable = false,
                 Cursor = Cursors.Hand
             };
-            PaintNav(btn, active);
+            var grid = new Grid { Height = 36 };
+            var mark = new Border
+            {
+                Width = 3,
+                CornerRadius = new CornerRadius(1.5),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 9, 0, 9)
+            };
+            Theme.BindElement(mark, BackgroundProperty, "nn.Pink");
+            grid.Children.Add(mark);
+            grid.Children.Add(new TextBlock { Text = text, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            btn.Content = grid;
+            PaintSettingsNav(btn, active);
             return btn;
+        }
+
+        static void PaintSettingsNav(Button btn, bool active)
+        {
+            if (btn == null)
+                return;
+            btn.Template = LeftButtonTemplate(active ? Theme.AccentSoft : Brushes.Transparent, active ? Theme.AccentSoft : Theme.RowHover, 8);
+            var grid = btn.Content as Grid;
+            if (grid == null || grid.Children.Count < 2)
+                return;
+            grid.Children[0].Visibility = active ? Visibility.Visible : Visibility.Hidden;
+            var label = grid.Children[1] as TextBlock;
+            if (label != null)
+            {
+                if (active)
+                    BindInk(label);
+                else
+                    BindLabel(label);
+                label.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+            }
         }
 
         void ShowSettingsSection(string section)
@@ -3090,123 +4215,488 @@ namespace Nanally
                 panelSetPath.Visibility = section == "path" ? Visibility.Visible : Visibility.Collapsed;
             if (panelSetFeishu != null)
                 panelSetFeishu.Visibility = section == "feishu" ? Visibility.Visible : Visibility.Collapsed;
-            PaintNav(btnSetLook, section == "look");
-            PaintNav(btnSetPath, section == "path");
-            PaintNav(btnSetFeishu, section == "feishu");
+            PaintSettingsNav(btnSetLook, section == "look");
+            PaintSettingsNav(btnSetPath, section == "path");
+            PaintSettingsNav(btnSetFeishu, section == "feishu");
+            if (section == "path")
+                UpdatePathStats();
+            if (section == "feishu")
+                RefreshLarkStatus();
         }
 
         StackPanel BuildLookSettings()
         {
-            var stack = new StackPanel();
-            stack.Children.Add(SettingTitle("主题色"));
-            stack.Children.Add(SettingDesc("选择界面强调色：蓝 / 粉 / 绿。"));
-            cmbAccent = new ComboBox { Width = 220, Height = 32, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 22) };
-            cmbAccent.Items.Add("蓝");
-            cmbAccent.Items.Add("粉");
-            cmbAccent.Items.Add("绿");
-            cmbAccent.SelectedIndex = 0;
-            StyleCombo(cmbAccent);
-            cmbAccent.SelectionChanged += delegate
-            {
-                if (applyingTheme || cmbAccent.SelectedIndex < 0)
-                    return;
-                settings.Accent = cmbAccent.SelectedIndex == 0 ? "Blue" : cmbAccent.SelectedIndex == 2 ? "Green" : "Pink";
-                ApplyAppearance();
-            };
-            stack.Children.Add(cmbAccent);
-            stack.Children.Add(SettingTitle("跟随系统主题"));
-            stack.Children.Add(SettingDesc("开启后按 Windows 浅色/深色自动切换。"));
+            var stack = new StackPanel { MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
+            stack.Children.Add(GroupTitle("主题色"));
+            var swatches = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+            swatches.Children.Add(AccentSwatch("Blue", "蓝", "#3794FF"));
+            swatches.Children.Add(AccentSwatch("Pink", "粉", "#EC4899"));
+            swatches.Children.Add(AccentSwatch("Green", "绿", "#22C55E"));
+            stack.Children.Add(swatches);
+            stack.Children.Add(Divider());
+            stack.Children.Add(GroupTitle("外观"));
             chkFollowSystem = IosSwitch();
-            chkFollowSystem.Margin = new Thickness(0, 0, 0, 22);
             chkFollowSystem.Checked += delegate { OnThemeToggled(); };
             chkFollowSystem.Unchecked += delegate { OnThemeToggled(); };
-            stack.Children.Add(chkFollowSystem);
-            stack.Children.Add(SettingTitle("暗色毛玻璃"));
-            stack.Children.Add(SettingDesc("开启后用暗色半透明色板 + 系统 Acrylic。关着「毛玻璃」时只是实色深色壳。跟随系统开启时不可用。"));
+            stack.Children.Add(SwitchRow(chkFollowSystem, "跟随系统主题", "按 Windows 的浅色 / 深色自动切换"));
             chkThemeDark = IosSwitch();
-            chkThemeDark.Margin = new Thickness(0, 0, 0, 22);
             chkThemeDark.Checked += delegate { OnThemeToggled(); };
             chkThemeDark.Unchecked += delegate { OnThemeToggled(); };
-            stack.Children.Add(chkThemeDark);
-            stack.Children.Add(SettingTitle("毛玻璃"));
-            stack.Children.Add(SettingDesc("开启后窗口/侧栏透出系统 Acrylic。建议与浅色或暗色主题一起开。失焦时系统可能收成实色。"));
+            stack.Children.Add(SwitchRow(chkThemeDark, "暗色", "半透明炭黑色板；打开「跟随系统主题」时不可用"));
             chkGlass = IosSwitch();
             chkGlass.Checked += delegate { OnThemeToggled(); };
             chkGlass.Unchecked += delegate { OnThemeToggled(); };
-            stack.Children.Add(chkGlass);
+            stack.Children.Add(SwitchRow(chkGlass, "毛玻璃", "窗口和侧栏透出桌面；窗口失焦时系统可能收成实色"));
             return stack;
+        }
+
+        Button AccentSwatch(string key, string label, string hex)
+        {
+            var ring = new Border
+            {
+                Width = 36,
+                Height = 36,
+                CornerRadius = new CornerRadius(18),
+                BorderThickness = new Thickness(2),
+                Padding = new Thickness(3),
+                BorderBrush = Brushes.Transparent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = new System.Windows.Shapes.Ellipse { Fill = B(hex) }
+            };
+            var text = new TextBlock { Text = label, FontSize = 11.5, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
+            var stack = new StackPanel();
+            stack.Children.Add(ring);
+            stack.Children.Add(text);
+            var btn = new Button { Content = stack, Width = 56, Cursor = Cursors.Hand, Focusable = false, Tag = key, ToolTip = label + "色" };
+            btn.Template = FlatButtonTemplate(Brushes.Transparent, Brushes.Transparent, 8);
+            btn.Click += delegate
+            {
+                if (settings.Accent == key)
+                    return;
+                settings.Accent = key;
+                ApplyAppearance();
+                PaintSwatches();
+            };
+            accentSwatches.Add(btn);
+            return btn;
+        }
+
+        void PaintSwatches()
+        {
+            foreach (var btn in accentSwatches)
+            {
+                var stack = btn.Content as StackPanel;
+                if (stack == null || stack.Children.Count < 2)
+                    continue;
+                var on = Equals(btn.Tag, settings.Accent);
+                var ring = stack.Children[0] as Border;
+                if (ring != null)
+                {
+                    if (on)
+                        ring.SetResourceReference(Border.BorderBrushProperty, "nn.Ink");
+                    else
+                        ring.BorderBrush = Brushes.Transparent;
+                }
+                var text = stack.Children[1] as TextBlock;
+                if (text != null)
+                {
+                    if (on)
+                        BindInk(text);
+                    else
+                        BindLabel(text);
+                    text.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+                }
+            }
+        }
+
+        static TextBlock GroupTitle(string text)
+        {
+            var block = new TextBlock { Text = text, FontSize = 13.5, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
+            BindInk(block);
+            return block;
+        }
+
+        static Border Divider()
+        {
+            var line = new Border { Height = 1, Margin = new Thickness(0, 18, 0, 18) };
+            Theme.BindElement(line, BackgroundProperty, "nn.Hairline");
+            return line;
+        }
+
+        // 开关靠左（AGENTS 约定），标题和说明在右边。
+        static UIElement SwitchRow(CheckBox box, string title, string desc)
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            box.Margin = new Thickness(0, 1, 14, 0);
+            box.VerticalAlignment = VerticalAlignment.Top;
+            row.Children.Add(box);
+            var text = new StackPanel();
+            var head = new TextBlock { Text = title, FontSize = 13 };
+            BindInk(head);
+            text.Children.Add(head);
+            var note = new TextBlock { Text = desc, FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+            BindLabel(note);
+            text.Children.Add(note);
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            return row;
+        }
+
+        static TextBlock FieldTitle(string text)
+        {
+            var block = new TextBlock { Text = text, FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 3) };
+            BindInk(block);
+            return block;
+        }
+
+        static TextBlock FieldNote(string text)
+        {
+            var block = new TextBlock { Text = text, FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+            BindLabel(block);
+            return block;
         }
 
         StackPanel BuildPathSettings()
         {
-            var stack = new StackPanel { Visibility = Visibility.Collapsed };
-            stack.Children.Add(SettingTitle("日志目录"));
-            stack.Children.Add(SettingDesc("提取日志的默认保存位置。可以随时改。"));
+            var stack = new StackPanel { Visibility = Visibility.Collapsed, MaxWidth = 600, HorizontalAlignment = HorizontalAlignment.Left };
+            stack.Children.Add(FieldTitle("游戏日志目录"));
+            stack.Children.Add(FieldNote("「拷贝日志」会在这里建「设备名+时间」文件夹。"));
+            var logsRow = new Grid();
+            logsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            logsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            logsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             setLogsBox = FieldBox(settings.LogsDir);
-            setLogsBox.Width = 420;
-            setLogsBox.HorizontalAlignment = HorizontalAlignment.Left;
-            stack.Children.Add(setLogsBox);
-            var save = MakePrimary("保存目录");
-            save.HorizontalAlignment = HorizontalAlignment.Left;
+            setLogsBox.Margin = new Thickness(0);
+            setLogsBox.FontFamily = MonoFont;
+            setLogsBox.FontSize = 12;
+            logsRow.Children.Add(setLogsBox);
+            var browse = SmallButton("浏览");
+            browse.Margin = new Thickness(8, 0, 0, 0);
+            browse.Click += delegate
+            {
+                var dlg = new System.Windows.Forms.FolderBrowserDialog();
+                dlg.Description = "选择游戏日志保存目录";
+                dlg.SelectedPath = Directory.Exists(setLogsBox.Text) ? setLogsBox.Text : settings.LogsDir;
+                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    setLogsBox.Text = dlg.SelectedPath;
+            };
+            Grid.SetColumn(browse, 1);
+            logsRow.Children.Add(browse);
+            var open = SmallButton("打开");
+            open.Margin = new Thickness(8, 0, 0, 0);
+            open.Click += delegate
+            {
+                var path = setLogsBox.Text == null ? "" : setLogsBox.Text.Trim();
+                if (Directory.Exists(path))
+                    OpenFolder(path);
+                else
+                    SetSettingsHint("这个目录还不存在，保存后会自动创建", Theme.Orange);
+            };
+            Grid.SetColumn(open, 2);
+            logsRow.Children.Add(open);
+            stack.Children.Add(logsRow);
+            pathStats = new TextBlock { FontSize = 11.5, Margin = new Thickness(0, 8, 0, 0) };
+            BindLabel(pathStats);
+            pathStats.Opacity = 0.85;
+            stack.Children.Add(pathStats);
+
+            stack.Children.Add(Divider());
+            stack.Children.Add(FieldTitle("Nanally 运行日志"));
+            stack.Children.Add(FieldNote("安装失败、发飞书失败时，把这个文件夹打包发给维护的人。它记的是 Nanally 自己，和上面的游戏日志不是一回事。"));
+            var whRow = new Grid();
+            whRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            whRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var whBox = FieldBox(WhatHappened.Dir());
+            whBox.Margin = new Thickness(0);
+            whBox.IsReadOnly = true;
+            whBox.FontFamily = MonoFont;
+            whBox.FontSize = 12;
+            whRow.Children.Add(whBox);
+            var openWh = SmallButton("打开");
+            openWh.Margin = new Thickness(8, 0, 0, 0);
+            openWh.Click += delegate { OpenFolder(WhatHappened.Dir()); };
+            Grid.SetColumn(openWh, 1);
+            whRow.Children.Add(openWh);
+            stack.Children.Add(whRow);
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 24, 0, 0) };
+            var save = MakePrimary("保存");
             save.Click += delegate { SaveSettings(); };
-            stack.Children.Add(save);
+            actions.Children.Add(save);
+            pathHint = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
+            BindLabel(pathHint);
+            actions.Children.Add(pathHint);
+            stack.Children.Add(actions);
             return stack;
+        }
+
+        void UpdatePathStats()
+        {
+            if (pathStats == null)
+                return;
+            var root = settings.LogsDir;
+            pathStats.Text = "";
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                return;
+            var gen = ++pathStatsGeneration;
+            Task.Run(delegate
+            {
+                var snaps = 0;
+                long bytes = 0;
+                try
+                {
+                    foreach (var dir in Directory.GetDirectories(root))
+                    {
+                        if (!SnapshotPattern.IsMatch(Path.GetFileName(dir)))
+                            continue;
+                        snaps++;
+                        bytes += Paths.DirectorySize(dir);
+                    }
+                }
+                catch { }
+                var text = snaps == 0 ? "还没有拷贝过" : "已有 " + snaps.ToString(CultureInfo.InvariantCulture) + " 次拷贝 · " + Paths.FormatSize(bytes);
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (gen == pathStatsGeneration && pathStats != null)
+                        pathStats.Text = text;
+                }));
+            });
         }
 
         StackPanel BuildFeishuSettings()
         {
-            var stack = new StackPanel { Visibility = Visibility.Collapsed };
-            stack.Children.Add(SettingTitle("App ID"));
-            stack.Children.Add(SettingDesc("写入飞书 CLI 凭证时用。留空则只记在本地设置里。"));
+            var stack = new StackPanel { Visibility = Visibility.Collapsed, MaxWidth = 600, HorizontalAlignment = HorizontalAlignment.Left };
+            var status = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+            for (var i = 0; i < 3; i++)
+            {
+                status.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var cell = new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(12, 8, 12, 9),
+                    Margin = new Thickness(i == 0 ? 0 : 4, 0, i == 2 ? 0 : 4, 0)
+                };
+                Theme.BindElement(cell, BackgroundProperty, "nn.RowHover");
+                Theme.BindElement(cell, Border.BorderBrushProperty, "nn.Hairline");
+                var inner = new StackPanel();
+                var caption = new TextBlock { Text = i == 0 ? "lark-cli" : i == 1 ? "机器人" : "用户登录", FontSize = 11 };
+                BindLabel(caption);
+                inner.Children.Add(caption);
+                var valueRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
+                larkDots[i] = new System.Windows.Shapes.Ellipse { Width = 7, Height = 7, Margin = new Thickness(0, 1, 7, 0), VerticalAlignment = VerticalAlignment.Center };
+                valueRow.Children.Add(larkDots[i]);
+                larkValues[i] = new TextBlock { FontSize = 12.5, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+                BindInk(larkValues[i]);
+                valueRow.Children.Add(larkValues[i]);
+                inner.Children.Add(valueRow);
+                cell.Child = inner;
+                Grid.SetColumn(cell, i);
+                status.Children.Add(cell);
+            }
+            stack.Children.Add(status);
+
+            var creds = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+            creds.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            creds.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+            creds.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var appCol = new StackPanel();
+            appCol.Children.Add(FieldTitle("App ID"));
             setAppIdBox = FieldBox(settings.FeishuAppId);
-            setAppIdBox.Width = 420;
-            setAppIdBox.HorizontalAlignment = HorizontalAlignment.Left;
-            stack.Children.Add(setAppIdBox);
-            stack.Children.Add(SettingTitle("CLI Token"));
-            stack.Children.Add(SettingDesc("留空不会覆盖已保存的。写入本机飞书 CLI 的安全存储，不会出现在窗口里。"));
+            setAppIdBox.Margin = new Thickness(0);
+            setAppIdBox.FontFamily = MonoFont;
+            setAppIdBox.FontSize = 12;
+            appCol.Children.Add(setAppIdBox);
+            creds.Children.Add(appCol);
+            var tokenCol = new StackPanel();
+            tokenCol.Children.Add(FieldTitle("CLI Token"));
+            var tokenHost = new Grid();
             setTokenBox = new PasswordBox
             {
                 Height = 32,
-                Width = 420,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 0, 0, 18),
-                Padding = new Thickness(10, 0, 10, 0),
-                Background = Theme.Field,
-                Foreground = Theme.Ink,
-                BorderBrush = Theme.Hairline,
-                CaretBrush = Theme.Pink
+                Padding = new Thickness(0),
+                VerticalContentAlignment = VerticalAlignment.Center
             };
-            stack.Children.Add(setTokenBox);
-            stack.Children.Add(SettingTitle("发给自己的会话"));
-            stack.Children.Add(SettingDesc("飞书会话 ID。截图和录屏会发到这里。"));
+            StylePassword(setTokenBox);
+            setTokenBox.PasswordChanged += delegate { UpdateTokenPlaceholder(); };
+            tokenHost.Children.Add(setTokenBox);
+            tokenPlaceholder = new TextBlock { FontSize = 12, Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+            BindLabel(tokenPlaceholder);
+            tokenPlaceholder.Opacity = 0.75;
+            tokenHost.Children.Add(tokenPlaceholder);
+            tokenCol.Children.Add(tokenHost);
+            Grid.SetColumn(tokenCol, 2);
+            creds.Children.Add(tokenCol);
+            stack.Children.Add(creds);
+            stack.Children.Add(FieldNote("App ID 和 Token 一起保存时，会写进本机飞书 CLI 的安全存储。Token 不会显示在窗口里。"));
+
+            var chatTitle = FieldTitle("发给自己的会话");
+            chatTitle.Margin = new Thickness(0, 6, 0, 3);
+            stack.Children.Add(chatTitle);
+            stack.Children.Add(FieldNote("截图和录屏都发到这里；会话里要有这个应用的机器人。"));
             setChatBox = FieldBox(settings.FeishuChatId);
-            setChatBox.Width = 420;
-            setChatBox.HorizontalAlignment = HorizontalAlignment.Left;
-            setChatBox.Margin = new Thickness(0, 0, 0, 8);
+            setChatBox.Margin = new Thickness(0, 0, 0, 14);
+            setChatBox.FontFamily = MonoFont;
+            setChatBox.FontSize = 12;
             stack.Children.Add(setChatBox);
-            stack.Children.Add(SettingTitle("怎么拿到自己的会话 ID"));
-            stack.Children.Add(SettingNote("不会自动填。按下面任一种查自己的，贴到上面。不要用别人的会话。"));
-            stack.Children.Add(SettingNote("1. 飞书桌面端打开要发到的会话。"));
-            stack.Children.Add(SettingNote("2. 点右上角更多，复制链接。"));
-            stack.Children.Add(SettingNote("3. 取链接里 openChatId= 后面整段。它以 oc_ 开头。"));
-            stack.Children.Add(SettingNote("本机已登录 lark-cli 时，也可以搜会话名："));
-            stack.Children.Add(SettingNote("lark-cli im +chat-search --query \"会话名\" --as bot"));
-            stack.Children.Add(SettingNote("看结果里的 chat_id。优先用机器人发；未配置机器人时会用已登录的用户身份发。"));
-            stack.Children.Add(SettingNote("本机未登录时，点「登录飞书 CLI」会打开浏览器；只申请基础消息权限，不会申请「以用户身份发送消息」。"));
-            stack.Children.Add(SettingNote("「发给自己」走机器人。请填 App ID / Token，并确保会话里有该机器人。"));
-            var login = MakePrimary("登录飞书 CLI");
-            login.HorizontalAlignment = HorizontalAlignment.Left;
-            login.Margin = new Thickness(0, 4, 0, 8);
-            login.Click += delegate { LoginFeishuCliAsync(); };
-            stack.Children.Add(login);
-            var save = MakePrimary("保存飞书");
-            save.HorizontalAlignment = HorizontalAlignment.Left;
-            save.Margin = new Thickness(0, 0, 0, 8);
+
+            var help = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(14, 10, 14, 10)
+            };
+            Theme.BindElement(help, Border.BorderBrushProperty, "nn.Hairline");
+            var helpStack = new StackPanel();
+            var helpHead = new Grid { Cursor = Cursors.Hand, Background = Brushes.Transparent };
+            var helpTitle = new TextBlock { Text = "怎么拿到会话 ID", FontSize = 12.5, FontWeight = FontWeights.SemiBold };
+            BindInk(helpTitle);
+            helpHead.Children.Add(helpTitle);
+            var chevron = new TextBlock { Text = "", FontFamily = Theme.IconFont, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            BindLabel(chevron);
+            helpHead.Children.Add(chevron);
+            helpStack.Children.Add(helpHead);
+            var helpBody = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 8, 0, 0) };
+            helpBody.Children.Add(FieldNote("1. 飞书桌面端打开要发到的会话 → 右上角「更多」→ 复制链接"));
+            helpBody.Children.Add(FieldNote("2. 取链接里 openChatId= 后面、以 oc_ 开头的那一段"));
+            helpBody.Children.Add(FieldNote("也可以用 lark-cli 按会话名搜，结果里取 chat_id："));
+            var cmdText = "lark-cli im +chat-search --query \"会话名\" --as bot";
+            var cmd = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 6, 8, 6), Margin = new Thickness(0, 0, 0, 10) };
+            Theme.BindElement(cmd, BackgroundProperty, "nn.Field");
+            var cmdRow = new Grid();
+            cmdRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            cmdRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var cmdBlock = new TextBlock { Text = cmdText, FontFamily = MonoFont, FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+            BindInk(cmdBlock);
+            cmdRow.Children.Add(cmdBlock);
+            var copyText = new TextBlock { Text = "复制", FontSize = 11.5, Margin = new Thickness(6, 2, 6, 2) };
+            copyText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Pink");
+            var copy = new Button { Content = copyText, Cursor = Cursors.Hand, Focusable = false };
+            copy.Template = FlatButtonTemplate(Brushes.Transparent, Theme.RowHover, 5);
+            copy.Click += delegate
+            {
+                try
+                {
+                    Clipboard.SetText(cmdText);
+                    copyText.Text = "已复制";
+                }
+                catch
+                {
+                    copyText.Text = "复制失败";
+                }
+            };
+            Grid.SetColumn(copy, 1);
+            cmdRow.Children.Add(copy);
+            cmd.Child = cmdRow;
+            helpBody.Children.Add(cmd);
+            helpBody.Children.Add(FieldNote("不要填别人的会话。「登录飞书 CLI」只申请基础消息权限，不会申请「以用户身份发送消息」；发送固定走机器人。"));
+            helpStack.Children.Add(helpBody);
+            helpHead.MouseLeftButtonUp += delegate
+            {
+                var show = helpBody.Visibility != Visibility.Visible;
+                helpBody.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                chevron.Text = show ? "" : "";
+            };
+            help.Child = helpStack;
+            stack.Children.Add(help);
+
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 22, 0, 0) };
+            var save = MakePrimary("保存");
             save.Click += delegate { SaveSettings(); };
-            stack.Children.Add(save);
-            settingsHint = new TextBlock { Foreground = Theme.Label, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+            actions.Children.Add(save);
+            var login = SmallButton("登录飞书 CLI");
+            login.Margin = new Thickness(8, 0, 0, 0);
+            login.Click += delegate { LoginFeishuCliAsync(); };
+            actions.Children.Add(login);
+            stack.Children.Add(actions);
+            settingsHint = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) };
+            BindLabel(settingsHint);
             stack.Children.Add(settingsHint);
             return stack;
+        }
+
+        void UpdateTokenPlaceholder()
+        {
+            if (tokenPlaceholder == null || setTokenBox == null)
+                return;
+            tokenPlaceholder.Text = string.IsNullOrWhiteSpace(settings.FeishuToken) ? "粘贴 tenant access token" : "已保存，留空不覆盖";
+            tokenPlaceholder.Visibility = setTokenBox.Password.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        void SetSettingsHint(string text, Brush color)
+        {
+            var key = Theme.Key(color ?? Theme.Label) ?? "nn.Label";
+            if (settingsHint != null)
+            {
+                settingsHint.Text = text ?? "";
+                settingsHint.SetResourceReference(TextBlock.ForegroundProperty, key);
+            }
+            if (pathHint != null)
+            {
+                pathHint.Text = text ?? "";
+                pathHint.SetResourceReference(TextBlock.ForegroundProperty, key);
+            }
+        }
+
+        void SetLarkCell(int index, string text, string dotKey)
+        {
+            if (larkValues[index] == null)
+                return;
+            larkValues[index].Text = text;
+            larkDots[index].SetResourceReference(System.Windows.Shapes.Shape.FillProperty, dotKey);
+        }
+
+        void RefreshLarkStatus()
+        {
+            if (larkValues[0] == null)
+                return;
+            for (var i = 0; i < 3; i++)
+                SetLarkCell(i, "检查中…", "nn.Label");
+            var gen = ++larkStatusGeneration;
+            Task.Run(delegate
+            {
+                var cli = FindLarkRunner();
+                var bot = false;
+                var user = false;
+                var failed = false;
+                if (cli != null)
+                {
+                    try
+                    {
+                        var result = RunLarkCli(cli, "auth status --json", null, false, 30000);
+                        var json = ((result.Stdout ?? "") + "\n" + (result.Stderr ?? "")).Trim();
+                        bot = IdentityReady(json, "bot");
+                        user = IdentityReady(json, "user");
+                    }
+                    catch
+                    {
+                        failed = true;
+                    }
+                }
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (gen != larkStatusGeneration)
+                        return;
+                    if (cli == null)
+                    {
+                        SetLarkCell(0, "没找到", "nn.Red");
+                        SetLarkCell(1, "—", "nn.Label");
+                        SetLarkCell(2, "—", "nn.Label");
+                        return;
+                    }
+                    SetLarkCell(0, "已找到", "nn.Ok");
+                    if (failed)
+                    {
+                        SetLarkCell(1, "查不到状态", "nn.Orange");
+                        SetLarkCell(2, "查不到状态", "nn.Orange");
+                        return;
+                    }
+                    SetLarkCell(1, bot ? "可以发送" : "未就绪", bot ? "nn.Ok" : "nn.Orange");
+                    SetLarkCell(2, user ? "已登录" : "未登录（不影响发送）", user ? "nn.Ok" : "nn.Label");
+                }));
+            });
         }
 
         void OnThemeToggled()
@@ -3243,38 +4733,28 @@ namespace Nanally
             PaintNav(tabMedia, currentPage == "media");
             PaintNav(tabApk, currentPage == "apk");
             PaintNav(navSettings, currentPage == "settings");
+            PaintNav(navToggle, false);
             if (btnSetLook != null)
             {
-                PaintNav(btnSetLook, panelSetLook != null && panelSetLook.Visibility == Visibility.Visible);
-                PaintNav(btnSetPath, panelSetPath != null && panelSetPath.Visibility == Visibility.Visible);
-                PaintNav(btnSetFeishu, panelSetFeishu != null && panelSetFeishu.Visibility == Visibility.Visible);
+                PaintSettingsNav(btnSetLook, panelSetLook != null && panelSetLook.Visibility == Visibility.Visible);
+                PaintSettingsNav(btnSetPath, panelSetPath != null && panelSetPath.Visibility == Visibility.Visible);
+                PaintSettingsNav(btnSetFeishu, panelSetFeishu != null && panelSetFeishu.Visibility == Visibility.Visible);
             }
             if (copyButton != null)
             {
                 copyButton.SetResourceReference(Control.ForegroundProperty, "nn.OnAccent");
-                copyButton.Template = FlatButtonTemplate(Theme.Pink, Theme.PinkPressed, 6);
+                copyButton.Template = FlatButtonTemplate(Theme.Pink, Theme.PinkPressed, 8);
             }
             if (sendButton != null)
             {
                 sendButton.SetResourceReference(Control.ForegroundProperty, "nn.OnAccent");
-                sendButton.Template = FlatButtonTemplate(Theme.Pink, Theme.PinkPressed, 6);
+                sendButton.Template = FlatButtonTemplate(Theme.Pink, Theme.PinkPressed, 8);
             }
-            if (apkProgressFill != null)
-                Theme.BindElement(apkProgressFill, BackgroundProperty, "nn.Pink");
-            if (apkProgressTrack != null)
-            {
-                Theme.BindElement(apkProgressTrack, BackgroundProperty, "nn.Chip");
-                Theme.BindElement(apkProgressTrack, Border.BorderBrushProperty, "nn.Hairline");
-            }
-            if (apkProgressText != null)
-                BindInk(apkProgressText);
-            if (refreshText != null)
-                refreshText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Pink");
-            if (statusText != null)
+            if (statusText != null && statusText.Text != null && Theme.Key(statusText.Foreground) == null)
                 statusText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Label");
             RestyleSwitches();
-            if (cmbAccent != null)
-                StyleCombo(cmbAccent);
+            PaintSwatches();
+            PaintSegments();
             if (pageLogs != null)
                 pageLogs.Background = Brushes.Transparent;
             if (pageMedia != null)
@@ -3283,12 +4763,6 @@ namespace Nanally
                 pageSettings.Background = Brushes.Transparent;
             if (pageAbout != null)
                 Theme.BindElement(pageAbout, BackgroundProperty, "nn.Bg");
-            if (deviceBar != null)
-            {
-                var bar = deviceBar as Border;
-                if (bar != null)
-                    Theme.BindElement(bar, BackgroundProperty, "nn.Card");
-            }
             if (actionFooter != null)
             {
                 var foot = actionFooter as Border;
@@ -3296,7 +4770,7 @@ namespace Nanally
                     Theme.BindElement(foot, BackgroundProperty, "nn.Card");
             }
             if (deviceCard != null)
-                Theme.BindElement(deviceCard, BackgroundProperty, "nn.Field");
+                Theme.BindElement(deviceCard, BackgroundProperty, "nn.Card");
             settings.Save();
         }
 
@@ -3330,7 +4804,7 @@ namespace Nanally
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 MaxWidth = 640,
-                Margin = new Thickness(40, 20, 40, 72)
+                Margin = new Thickness(40, 20, 40, 40)
             };
             var word = new TextBlock
             {
@@ -3354,28 +4828,25 @@ namespace Nanally
             masks.Children.Add(RevealLine("连上设备，就能把 Logs 拷到你指定的目录。"));
             masks.Children.Add(RevealLine("截图和录屏可以预览，勾选之后发给自己。"));
             mid.Children.Add(masks);
-            btnAboutUpdate = MakePrimary("从 GitHub 更新");
-            btnAboutUpdate.Margin = new Thickness(0, 28, 0, 0);
-            btnAboutUpdate.HorizontalAlignment = HorizontalAlignment.Center;
+
+            var versions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 30, 0, 0) };
+            TextBlock current;
+            var currentPill = Pill("当前 " + AppInfo.DisplayVersion, out current);
+            txtAboutVersion = current;
+            versions.Children.Add(currentPill);
+            TextBlock remote;
+            aboutRemotePill = Pill("", out remote);
+            aboutRemoteText = remote;
+            aboutRemotePill.Margin = new Thickness(8, 0, 0, 0);
+            aboutRemotePill.Visibility = Visibility.Collapsed;
+            versions.Children.Add(aboutRemotePill);
+            btnAboutUpdate = MakePrimary("更新并重启");
+            btnAboutUpdate.Margin = new Thickness(12, 0, 0, 0);
             btnAboutUpdate.Visibility = Visibility.Collapsed;
             btnAboutUpdate.Click += delegate { StartAboutUpdate(); };
-            mid.Children.Add(btnAboutUpdate);
+            versions.Children.Add(btnAboutUpdate);
+            mid.Children.Add(versions);
             page.Children.Add(mid);
-            var foot = new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Bottom,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 28)
-            };
-            txtAboutVersion = new TextBlock
-            {
-                Text = AppInfo.DisplayVersion,
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            txtAboutVersion.SetResourceReference(TextBlock.ForegroundProperty, "nn.Label");
-            foot.Children.Add(txtAboutVersion);
-            page.Children.Add(foot);
             return page;
         }
 
@@ -3385,7 +4856,13 @@ namespace Nanally
                 btnAboutUpdate.Visibility = Visibility.Collapsed;
             pendingUpdate = null;
             if (txtAboutVersion != null)
-                txtAboutVersion.Text = AppInfo.DisplayVersion;
+                txtAboutVersion.Text = "当前 " + AppInfo.DisplayVersion;
+            if (aboutRemotePill != null)
+            {
+                aboutRemoteText.Text = "正在检查更新…";
+                PaintPill(aboutRemotePill, aboutRemoteText, "nn.Label", "nn.Chip");
+                aboutRemotePill.Visibility = Visibility.Visible;
+            }
             var gen = ++aboutUpdateCheckGen;
             var repo = AppInfo.DefaultUpdateRepo;
             Task.Factory.StartNew(delegate
@@ -3399,21 +4876,29 @@ namespace Nanally
                     if (info == null)
                     {
                         WhatHappened.Info("关于页检查更新失败：" + (error ?? "unknown"));
+                        if (aboutRemotePill != null)
+                            aboutRemotePill.Visibility = Visibility.Collapsed;
                         return;
                     }
                     if (!GitHubUpdater.IsNewer(info.Version, AppInfo.Version))
                     {
                         WhatHappened.Info("关于页检查更新：已是最新 local=" + AppInfo.Version + " remote=" + info.Version);
+                        if (aboutRemotePill != null)
+                        {
+                            aboutRemoteText.Text = "已是最新";
+                            PaintPill(aboutRemotePill, aboutRemoteText, "nn.Ok", "nn.Chip");
+                        }
                         return;
                     }
                     pendingUpdate = info;
-                    if (btnAboutUpdate != null)
+                    var tag = string.IsNullOrEmpty(info.Tag) ? info.Version : info.Tag;
+                    if (aboutRemotePill != null)
                     {
-                        btnAboutUpdate.Content = "更新到 " + (string.IsNullOrEmpty(info.Tag) ? info.Version : info.Tag);
-                        btnAboutUpdate.Visibility = Visibility.Visible;
+                        aboutRemoteText.Text = "GitHub 有 " + tag;
+                        PaintPill(aboutRemotePill, aboutRemoteText, "nn.Pink", "nn.AccentSoft");
                     }
-                    if (txtAboutVersion != null)
-                        txtAboutVersion.Text = AppInfo.DisplayVersion + " · 可更新到 " + (string.IsNullOrEmpty(info.Tag) ? info.Version : info.Tag);
+                    if (btnAboutUpdate != null)
+                        btnAboutUpdate.Visibility = Visibility.Visible;
                     WhatHappened.Info("关于页发现新版本 local=" + AppInfo.Version + " remote=" + info.Version);
                 }));
             });
@@ -3460,7 +4945,7 @@ namespace Nanally
                         MessageBox.Show(this, error, "更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
-                    SetStatus("更新已就绪，正在重启…", Theme.PinkSoft);
+                    SetStatus("更新已就绪，正在重启…", Theme.Ok);
                     WhatHappened.Info("自更新脚本已启动，准备退出");
                     Close();
                 }));
@@ -3469,18 +4954,28 @@ namespace Nanally
 
         Grid RevealLine(string text)
         {
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Center };
-            grid.Children.Add(new TextBlock
+            // 悬停揭示：用模糊代替实色遮罩，开毛玻璃时不会露出深色方块。
+            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            var line = new TextBlock
             {
                 Text = text,
                 FontSize = 13,
-                Foreground = Theme.Ink,
-                TextAlignment = TextAlignment.Center
-            });
-            var mask = new Border { Background = Theme.Bg, CornerRadius = new CornerRadius(3), Cursor = Cursors.Hand };
-            mask.MouseEnter += delegate { mask.Opacity = 0; };
-            mask.MouseLeave += delegate { mask.Opacity = 1; };
-            grid.Children.Add(mask);
+                TextAlignment = TextAlignment.Center,
+                Opacity = 0.55,
+                Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 6 }
+            };
+            BindInk(line);
+            grid.Children.Add(line);
+            grid.MouseEnter += delegate
+            {
+                line.Effect = null;
+                line.Opacity = 1;
+            };
+            grid.MouseLeave += delegate
+            {
+                line.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 6 };
+                line.Opacity = 0.55;
+            };
             return grid;
         }
 
@@ -3566,6 +5061,40 @@ namespace Nanally
             box.SetResourceReference(Control.BorderBrushProperty, "nn.Hairline");
             box.SetResourceReference(Control.ForegroundProperty, "nn.Ink");
             box.SetResourceReference(TextBox.CaretBrushProperty, "nn.Pink");
+        }
+
+        static void StylePassword(PasswordBox box)
+        {
+            box.Template = PasswordTemplate();
+            box.SetResourceReference(Control.BackgroundProperty, "nn.Field");
+            box.SetResourceReference(Control.BorderBrushProperty, "nn.Hairline");
+            box.SetResourceReference(Control.ForegroundProperty, "nn.Ink");
+            box.SetResourceReference(PasswordBox.CaretBrushProperty, "nn.Pink");
+        }
+
+        // PasswordBox 原来用系统默认模板（直角、系统边框），和其他输入框不一致。
+        static ControlTemplate PasswordTemplate()
+        {
+            var template = new ControlTemplate(typeof(PasswordBox));
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "Bd";
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+            border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+            var host = new FrameworkElementFactory(typeof(ScrollViewer));
+            host.Name = "PART_ContentHost";
+            host.SetValue(FrameworkElement.MarginProperty, new Thickness(10, 0, 8, 0));
+            host.SetValue(ScrollViewer.VerticalAlignmentProperty, VerticalAlignment.Center);
+            border.AppendChild(host);
+            template.VisualTree = border;
+            var over = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            over.Setters.Add(Theme.Dyn(Border.BorderBrushProperty, Theme.Pink, "Bd"));
+            template.Triggers.Add(over);
+            var focus = new Trigger { Property = UIElement.IsKeyboardFocusWithinProperty, Value = true };
+            focus.Setters.Add(Theme.Dyn(Border.BorderBrushProperty, Theme.Pink, "Bd"));
+            template.Triggers.Add(focus);
+            return template;
         }
 
         static ControlTemplate FieldTemplate()
@@ -3755,13 +5284,13 @@ namespace Nanally
                 catch (Exception ex)
                 {
                     SetStatus("目录不能用：" + ex.Message, Theme.Red);
+                    SetSettingsHint("目录不能用：" + ex.Message, Theme.Red);
                     return;
                 }
                 settings.LogsDir = logs;
                 logsBrowsePath = logs;
-                if (logsPathBox != null)
-                    logsPathBox.Text = logs;
                 RefreshLogsList();
+                UpdatePathStats();
             }
             settings.FeishuAppId = setAppIdBox.Text == null ? "" : setAppIdBox.Text.Trim();
             settings.FeishuChatId = setChatBox.Text == null ? "" : setChatBox.Text.Trim();
@@ -3771,35 +5300,50 @@ namespace Nanally
             settings.Save();
             if (token.Length == 0)
             {
-                    SetStatus("设置已保存", Theme.PinkSoft);
-                    if (settingsHint != null)
-                        settingsHint.Text = "已保存";
+                SetStatus("设置已保存", Theme.Ok);
+                SetSettingsHint("已保存", Theme.Ok);
                 return;
             }
+            setTokenBox.Password = "";
+            UpdateTokenPlaceholder();
             if (string.IsNullOrWhiteSpace(settings.FeishuAppId))
             {
                 SetStatus("Token 已记在本地。写入飞书 CLI 还需要 App ID。", Theme.Orange);
+                SetSettingsHint("Token 已记在本地。写入飞书 CLI 还需要 App ID。", Theme.Orange);
                 return;
             }
             try
             {
                 StoreToken(settings.FeishuAppId, token);
-                SetStatus("设置已保存，Token 已写入飞书 CLI", Theme.PinkSoft);
+                SetStatus("设置已保存，Token 已写入飞书 CLI", Theme.Ok);
+                SetSettingsHint("已保存，Token 已写入飞书 CLI", Theme.Ok);
+                RefreshLarkStatus();
             }
             catch (Exception ex)
             {
                 SetStatus("设置已保存，但写入飞书 CLI 失败：" + ex.Message, Theme.Orange);
+                SetSettingsHint("已保存，但写入飞书 CLI 失败：" + ex.Message, Theme.Orange);
             }
         }
 
         void FitMediaTiles()
         {
-            if (mediaTiles == null || pageMedia == null)
+            if (mediaTiles == null)
                 return;
-            var width = pageMedia.ActualWidth - 28;
-            if (width < 160)
-                width = 160;
-            mediaTiles.Width = width;
+            var width = mediaTiles.ActualWidth;
+            if (width < 200)
+                return;
+            if (Math.Abs(width - lastFitWidth) < 0.5)
+                return;
+            lastFitWidth = width;
+            var cols = Math.Max(2, (int)Math.Floor((width + MediaGap) / (176 + MediaGap)));
+            var tileWidth = Math.Floor((width - MediaGap * (cols - 1)) / cols);
+            // 20:9 横屏框；ring 两侧各占 4px（边框 2 + 内边距 2）。
+            var frameHeight = Math.Round((tileWidth - 8) * 9 / 20);
+            foreach (var tile in mediaTileCards)
+                tile.Width = tileWidth;
+            foreach (var frame in mediaTileFrames)
+                frame.Height = frameHeight;
         }
 
         void ResetThumbs()
@@ -4179,12 +5723,18 @@ namespace Nanally
 
         void OpenPreview(MediaItem item)
         {
-            if (previewLayer == null || selected == null || adbExe == null)
+            if (previewLayer == null || selected == null || adbExe == null || item == null)
                 return;
             previewToken++;
             var token = previewToken;
+            previewItem = item;
             previewLayer.Visibility = Visibility.Visible;
             previewTitle.Text = item.Name;
+            previewMeta.Text = KindLabel(item) + " · " + Paths.FormatSize(item.Size) + (string.IsNullOrEmpty(item.DateText) ? "" : " · " + FormatMediaDate(item.DateText));
+            PaintPreviewCheck();
+            var index = mediaOrdered.IndexOf(item);
+            previewPrev.IsEnabled = index > 0;
+            previewNext.IsEnabled = index >= 0 && index < mediaOrdered.Count - 1;
             previewImage.Source = null;
             previewImage.Visibility = Visibility.Collapsed;
             previewVideo.Stop();
@@ -4192,6 +5742,7 @@ namespace Nanally
             previewVideo.Visibility = Visibility.Collapsed;
             previewHint.Text = "正在准备预览…";
             previewHint.Visibility = Visibility.Visible;
+            UpdateMediaCount();
             var adb = adbExe;
             var serial = selected.Serial;
             Task.Run(delegate
@@ -4215,6 +5766,50 @@ namespace Nanally
                     ShowPreviewFile(current, local);
                 }));
             });
+        }
+
+        void PreviewStep(int delta)
+        {
+            if (previewItem == null)
+                return;
+            var index = mediaOrdered.IndexOf(previewItem);
+            if (index < 0)
+                return;
+            var next = index + delta;
+            if (next < 0 || next >= mediaOrdered.Count)
+                return;
+            OpenPreview(mediaOrdered[next]);
+        }
+
+        void PreviewToggleCheck()
+        {
+            var item = previewItem;
+            if (item == null)
+                return;
+            item.IsChecked = !item.IsChecked;
+            if (item.CheckHost != null)
+                item.CheckHost.IsChecked = item.IsChecked;
+            PaintPreviewCheck();
+            UpdateMediaCount();
+        }
+
+        void PaintPreviewCheck()
+        {
+            if (previewCheck == null)
+                return;
+            var on = previewItem != null && previewItem.IsChecked;
+            if (on)
+            {
+                previewCheck.SetResourceReference(Border.BackgroundProperty, "nn.Pink");
+                previewCheck.SetResourceReference(Border.BorderBrushProperty, "nn.Pink");
+            }
+            else
+            {
+                previewCheck.Background = B("#66000000");
+                previewCheck.BorderBrush = B("#E6FFFFFF");
+            }
+            if (previewCheckText != null)
+                previewCheckText.Text = on ? "已勾选" : "勾选";
         }
 
         void ShowPreviewFile(MediaItem item, string path)
@@ -4245,6 +5840,7 @@ namespace Nanally
         void ClosePreview()
         {
             previewToken++;
+            previewItem = null;
             if (previewLayer != null)
                 previewLayer.Visibility = Visibility.Collapsed;
             if (previewVideo != null)
@@ -4258,7 +5854,7 @@ namespace Nanally
 
         Grid BuildPreviewLayer()
         {
-            var mask = new Grid { Background = B("#CC000000") };
+            var mask = new Grid { Background = B("#B3000000") };
             mask.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
             {
                 if (e.OriginalSource == mask)
@@ -4266,34 +5862,74 @@ namespace Nanally
             };
             var card = new Border
             {
-                Width = 760,
-                Height = 520,
-                Background = Theme.Card,
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(12),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
+                Margin = new Thickness(48, 28, 48, 36),
+                MaxWidth = 1100,
+                MaxHeight = 760,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(12)
             };
+            Theme.BindElement(card, BackgroundProperty, "nn.Menu");
+            Theme.BindElement(card, Border.BorderBrushProperty, "nn.Hairline");
             var grid = new Grid();
-            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(40) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var head = new Grid { Margin = new Thickness(14, 0, 8, 0) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var head = new Grid { Margin = new Thickness(2, 0, 0, 10) };
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var checkRow = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent };
+            previewCheck = new Border
+            {
+                Width = 14,
+                Height = 14,
+                CornerRadius = new CornerRadius(7),
+                BorderThickness = new Thickness(1.5),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            checkRow.Children.Add(previewCheck);
+            previewCheckText = new TextBlock { FontSize = 12, Margin = new Thickness(6, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
+            BindLabel(previewCheckText);
+            checkRow.Children.Add(previewCheckText);
+            checkRow.MouseLeftButtonUp += delegate { PreviewToggleCheck(); };
+            head.Children.Add(checkRow);
+            var titles = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             previewTitle = new TextBlock
             {
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = Theme.Ink,
-                FontSize = 13,
+                FontFamily = MonoFont,
+                FontSize = 12,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
-            head.Children.Add(previewTitle);
-            var close = SmallButton("关闭");
+            BindInk(previewTitle);
+            titles.Children.Add(previewTitle);
+            TextBlock metaText;
+            var meta = Pill("", out metaText);
+            meta.Margin = new Thickness(10, 0, 0, 0);
+            previewMeta = metaText;
+            titles.Children.Add(meta);
+            Grid.SetColumn(titles, 1);
+            head.Children.Add(titles);
+            var nav = new StackPanel { Orientation = Orientation.Horizontal };
+            previewPrev = IconButton("", "上一张（←）");
+            previewPrev.Click += delegate { PreviewStep(-1); };
+            nav.Children.Add(previewPrev);
+            previewNext = IconButton("", "下一张（→）");
+            previewNext.Margin = new Thickness(6, 0, 0, 0);
+            previewNext.Click += delegate { PreviewStep(1); };
+            nav.Children.Add(previewNext);
+            var close = IconButton("", "关闭（Esc）");
+            close.Margin = new Thickness(6, 0, 0, 0);
             close.Click += delegate { ClosePreview(); };
-            Grid.SetColumn(close, 1);
-            head.Children.Add(close);
+            nav.Children.Add(close);
+            Grid.SetColumn(nav, 2);
+            head.Children.Add(nav);
             grid.Children.Add(head);
-            var stage = new Grid { Background = Brushes.Black, Margin = new Thickness(10, 0, 10, 10) };
+
+            var stage = new Grid { Background = Brushes.Black };
+            ClipRound(stage, 8);
             previewImage = new Image { Stretch = Stretch.Uniform };
             previewVideo = new MediaElement
             {
@@ -4327,6 +5963,23 @@ namespace Nanally
             stage.Children.Add(previewHint);
             Grid.SetRow(stage, 1);
             grid.Children.Add(stage);
+
+            var foot = new Grid { Margin = new Thickness(2, 10, 0, 0) };
+            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            foot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var keys = new TextBlock { Text = "← → 切换 · 空格 勾选 · 点视频暂停 · Esc 关闭", FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center };
+            BindLabel(keys);
+            foot.Children.Add(keys);
+            previewSend = MakePrimary("发给自己");
+            previewSend.Click += delegate
+            {
+                ClosePreview();
+                SendSelectedAsync();
+            };
+            Grid.SetColumn(previewSend, 1);
+            foot.Children.Add(previewSend);
+            Grid.SetRow(foot, 2);
+            grid.Children.Add(foot);
             card.Child = grid;
             mask.Children.Add(card);
             return mask;

@@ -134,6 +134,7 @@ namespace Nanally
         public static SolidColorBrush Field;
         public static SolidColorBrush OnAccent;
         public static SolidColorBrush Thumb;
+        public static SolidColorBrush Ok;
         public static readonly FontFamily Font = new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
         public static readonly FontFamily IconFont = new FontFamily("Segoe MDL2 Assets");
         public static bool Dark;
@@ -169,6 +170,7 @@ namespace Nanally
             Field = Paint("#F2FFFFFF");
             OnAccent = Paint("#FFFFFF");
             Thumb = Paint("#99A0B0C0");
+            Ok = Paint("#16A34A");
             Mount(dict);
         }
 
@@ -195,6 +197,7 @@ namespace Nanally
                 Set(ref RowHover, "nn.RowHover", "#28FFFFFF");
                 Set(ref Red, "nn.Red", "#F14C4C");
                 Set(ref Orange, "nn.Orange", "#FFB020");
+                Set(ref Ok, "nn.Ok", "#3DD68C");
             }
             else
             {
@@ -216,6 +219,7 @@ namespace Nanally
                 Set(ref RowHover, "nn.RowHover", "#8CFFFFFF");
                 Set(ref Red, "nn.Red", "#E86A6A");
                 Set(ref Orange, "nn.Orange", "#D97706");
+                Set(ref Ok, "nn.Ok", "#16A34A");
             }
             var pink = accent == "Blue" ? (dark ? "#3794FF" : "#4A7FE5") : accent == "Green" ? (dark ? "#22C55E" : "#16A34A") : (dark ? "#EC4899" : "#DB2777");
             var hover = accent == "Blue" ? (dark ? "#4DAAF8" : "#5B8FEA") : accent == "Green" ? (dark ? "#4ADE80" : "#15803D") : (dark ? "#F472B6" : "#BE185D");
@@ -278,6 +282,7 @@ namespace Nanally
             Put(dict, "nn.Field", Field);
             Put(dict, "nn.OnAccent", OnAccent);
             Put(dict, "nn.Thumb", Thumb);
+            Put(dict, "nn.Ok", Ok);
             InstallScrollBars(dict);
         }
 
@@ -339,6 +344,7 @@ namespace Nanally
             if (ReferenceEquals(brush, Field)) return "nn.Field";
             if (ReferenceEquals(brush, OnAccent)) return "nn.OnAccent";
             if (ReferenceEquals(brush, Thumb)) return "nn.Thumb";
+            if (ReferenceEquals(brush, Ok)) return "nn.Ok";
             return null;
         }
 
@@ -414,8 +420,8 @@ namespace Nanally
 
     static class AppInfo
     {
-        public const string Version = "1.0.2";
-        public const string DisplayVersion = "v1.0.2";
+        public const string Version = "1.0.3";
+        public const string DisplayVersion = "v1.0.3";
         /// <summary>默认更新源：GitHub owner/repo，对应 Releases。</summary>
         public const string DefaultUpdateRepo = "SodaSolas/Nanally";
     }
@@ -1454,7 +1460,7 @@ namespace Nanally
         TextBox logsPathBox;
         StackPanel logsRows;
         TextBlock logsEmpty;
-        WrapPanel mediaTiles;
+        StackPanel mediaTiles;
         TextBlock mediaEmpty;
         int thumbGeneration;
         int thumbDone;
@@ -1470,7 +1476,6 @@ namespace Nanally
         int previewToken;
         bool previewPlaying = true;
         TextBlock mediaCount;
-        ComboBox mediaFilter;
         Grid pageLogs;
         Grid pageMedia;
         Grid pageApk;
@@ -1517,7 +1522,6 @@ namespace Nanally
         CheckBox chkApkUninstall;
         CheckBox chkApkInstallAll;
         CheckBox chkApkUseAdbInstall;
-        ComboBox cmbAccent;
         Button btnSetLook;
         Button btnSetPath;
         Button btnSetFeishu;
@@ -1536,6 +1540,7 @@ namespace Nanally
         int apkLastLoggedPercent = -1;
         bool applyingTheme;
         readonly List<MediaItem> mediaItems = new List<MediaItem>();
+        string logsHighlight;
 
         public MainWindow()
         {
@@ -1980,6 +1985,7 @@ namespace Nanally
                 ShowDevicePlaceholder("没有找到 adb", "先装 platform-tools");
                 SetStatus("没有找到 adb，装好后再点刷新", Theme.Red);
                 UpdateButtons();
+                OnDevicesRendered();
                 return;
             }
 
@@ -2002,6 +2008,7 @@ namespace Nanally
                         ShowDevicePlaceholder("读不到设备", error);
                         SetStatus(error, Theme.Red);
                         UpdateButtons();
+                        OnDevicesRendered();
                         return;
                     }
                     RenderDevices(keep);
@@ -2031,8 +2038,9 @@ namespace Nanally
             if (devices.Count == 0)
             {
                 selected = null;
-                ShowDevicePlaceholder("没有连接的手机", "用数据线连上，并允许 USB 调试");
+                ShowDevicePlaceholder("没有连接的手机", "用数据线连上");
                 OnSelectedDeviceChanged(previousSerial);
+                OnDevicesRendered();
                 return;
             }
 
@@ -2046,6 +2054,7 @@ namespace Nanally
             }
             deviceHost.Children.Add(face);
             OnSelectedDeviceChanged(previousSerial);
+            OnDevicesRendered();
         }
 
         void OnSelectedDeviceChanged(string previousSerial)
@@ -2105,7 +2114,7 @@ namespace Nanally
                 Margin = new Thickness(0, 0, 8, 0)
             };
             text.Children.Add(Line(item.DisplayName, 14, Theme.Ink, FontWeights.SemiBold));
-            var subBlock = Line(StateText(item), 12, Theme.Label, FontWeights.Regular);
+            var subBlock = Line(ShortStateText(item), 12, item.IsReady ? Theme.Ok : Theme.Orange, FontWeights.Regular);
             subBlock.Margin = new Thickness(8, 0, 0, 0);
             subBlock.VerticalAlignment = VerticalAlignment.Center;
             text.Children.Add(subBlock);
@@ -2289,7 +2298,7 @@ namespace Nanally
         static Brush DotBrush(string state)
         {
             if (state == "device")
-                return Theme.Pink;
+                return Theme.Ok;
             if (state == "unauthorized" || state == "authorizing")
                 return Theme.Orange;
             return Theme.Label;
@@ -2301,6 +2310,17 @@ namespace Nanally
                 return "已连接 · USB";
             if (item.State == "unauthorized" || item.State == "authorizing")
                 return "请在手机上允许调试";
+            if (item.State == "offline")
+                return "离线";
+            return item.State;
+        }
+
+        static string ShortStateText(DeviceInfo item)
+        {
+            if (item.State == "device")
+                return "USB";
+            if (item.State == "unauthorized" || item.State == "authorizing")
+                return "未授权";
             if (item.State == "offline")
                 return "离线";
             return item.State;
@@ -2326,6 +2346,7 @@ namespace Nanally
             }
             if (sendButton != null)
                 sendButton.IsEnabled = !busy && selected != null && selected.IsReady && adbExe != null;
+            UpdateMediaCount();
             if (refreshText != null)
                 refreshText.Opacity = busy ? 0.35 : 1;
         }
@@ -2339,6 +2360,7 @@ namespace Nanally
                 statusText.SetResourceReference(TextBlock.ForegroundProperty, key);
             else
                 statusText.Foreground = brush;
+            MirrorMediaStatus(text, brush);
             if (brush == Theme.Red)
                 WhatHappened.Error("status " + text);
             else if (brush == Theme.Orange)
@@ -2389,8 +2411,9 @@ namespace Nanally
                     {
                         lastSnapshot = result.SnapshotDir;
                         lastLogs = result.LogsDir;
-                        SetStatus(result.Message, Theme.PinkSoft);
-                        logsBrowsePath = result.SnapshotDir;
+                        SetStatus("✓ " + result.Message + "  →  " + Path.GetFileName(result.SnapshotDir), Theme.Ok);
+                        logsHighlight = result.SnapshotDir;
+                        logsBrowsePath = result.LogsDir;
                         RefreshLogsList();
                         WhatHappened.Info("拷贝游戏 Logs 成功 → " + result.SnapshotDir);
                     }
