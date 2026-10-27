@@ -23,8 +23,6 @@ namespace Nanally
 {
     public static class Program
     {
-        const string RemoteLogs = "/sdcard/Android/data/com.piegame.bd/files/Logs";
-
         [DllImport("user32.dll")]
         static extern bool SetProcessDPIAware();
 
@@ -67,6 +65,21 @@ namespace Nanally
                 File.WriteAllText(Path.Combine(src, "a.log"), "hello", Encoding.UTF8);
                 File.WriteAllText(Path.Combine(src, "session", "b.log"), "world", Encoding.UTF8);
 
+                var media = Path.Combine(root, "视频 拷贝");
+                var sourceVideo = Path.Combine(src, "a.log");
+                var first = Paths.CopyMediaFile(sourceVideo, media, "录屏.mp4");
+                var second = Paths.CopyMediaFile(sourceVideo, media, "录屏.mp4");
+                if (Path.GetFileName(second) != "录屏_2.mp4" || File.ReadAllText(first, Encoding.UTF8) != "hello")
+                    errors.Add("media collision or content failed");
+                Directory.CreateDirectory(Path.Combine(media, "录屏_3.mp4"));
+                var third = Paths.CopyMediaFile(sourceVideo, media, "录屏.mp4");
+                if (Path.GetFileName(third) != "录屏_4.mp4")
+                    errors.Add("media directory collision failed");
+                var missingFailed = false;
+                try { Paths.CopyMediaFile(Path.Combine(src, "missing.mp4"), media, "missing.mp4"); }
+                catch (FileNotFoundException) { missingFailed = true; }
+                if (!missingFailed || File.Exists(Path.Combine(media, "missing.mp4")) || Directory.GetFiles(media, ".nanally-copy-*").Length != 0)
+                    errors.Add("media failure cleanup failed");
                 var logs = Path.Combine(root, "logs");
                 Directory.CreateDirectory(logs);
                 File.WriteAllText(Path.Combine(logs, "keep.txt"), "keep", Encoding.UTF8);
@@ -420,8 +433,8 @@ namespace Nanally
 
     static class AppInfo
     {
-        public const string Version = "1.0.3";
-        public const string DisplayVersion = "v1.0.3";
+        public const string Version = "1.0.4";
+        public const string DisplayVersion = "v1.0.4";
         /// <summary>默认更新源：GitHub owner/repo，对应 Releases。</summary>
         public const string DefaultUpdateRepo = "SodaSolas/Nanally";
     }
@@ -768,6 +781,41 @@ namespace Nanally
 
     static class Paths
     {
+        // Publish only a complete file, preserving existing files even when names collide.
+        public static string CopyMediaFile(string source, string directory, string name)
+        {
+            Directory.CreateDirectory(directory);
+            var fileName = SafeName(Path.GetFileName(name));
+            var stem = Path.GetFileNameWithoutExtension(fileName);
+            var extension = Path.GetExtension(fileName);
+            var staging = Path.Combine(directory, ".nanally-copy-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                File.Copy(source, staging, false);
+                for (var suffix = 1; ; suffix++)
+                {
+                    var candidate = Path.Combine(directory, suffix == 1 ? fileName
+                        : stem + "_" + suffix.ToString(CultureInfo.InvariantCulture) + extension);
+                    if (File.Exists(candidate) || Directory.Exists(candidate))
+                        continue;
+                    try
+                    {
+                        File.Move(staging, candidate);
+                        return candidate;
+                    }
+                    catch (IOException)
+                    {
+                        if (!File.Exists(candidate) && !Directory.Exists(candidate))
+                            throw;
+                    }
+                }
+            }
+            finally
+            {
+                if (File.Exists(staging))
+                    File.Delete(staging);
+            }
+        }
         public static string ToolRoot()
         {
             var dir = AppDomain.CurrentDomain.BaseDirectory;
@@ -923,6 +971,34 @@ namespace Nanally
     {
         public const string RemoteLogs = "/sdcard/Android/data/com.piegame.bd/files/Logs";
 
+        // 设置里可以只写 Android/data/包名/files/logs，补成 /sdcard/ 开头；空的用默认。
+        public static string NormalizeRemoteLogs(string path)
+        {
+            var p = (path ?? "").Trim().Replace('\\', '/').Trim('"');
+            while (p.Length > 1 && p.EndsWith("/"))
+                p = p.Substring(0, p.Length - 1);
+            if (p.Length == 0)
+                return RemoteLogs;
+            if (!p.StartsWith("/"))
+                p = "/sdcard/" + p;
+            return p;
+        }
+        static readonly object processLock = new object();
+        static readonly HashSet<Process> activeProcesses = new HashSet<Process>();
+        static bool stopping;
+
+        public static void StopAll()
+        {
+            lock (processLock)
+            {
+                stopping = true;
+                foreach (var process in activeProcesses)
+                {
+                    try { if (!process.HasExited) process.Kill(); } catch { }
+                }
+            }
+        }
+
         public static string FindExe()
         {
             foreach (var proc in Process.GetProcessesByName("adb"))
@@ -1022,32 +1098,46 @@ namespace Nanally
             var stderr = new StringBuilder();
             // adb push 进度用 \r 刷新同一行；BeginOutputReadLine 要等换行才回调，会看起来像卡死。
             // 按字符泵流，遇到 \r 或 \n 都触发 onLine。
-            process.Start();
-            if (onStart != null)
-                onStart(process);
-            var outDone = new ManualResetEvent(false);
-            var errDone = new ManualResetEvent(false);
-            ThreadPool.QueueUserWorkItem(delegate
+            lock (processLock)
             {
-                try { PumpStream(process.StandardOutput, stdout, onLine); }
-                finally { outDone.Set(); }
-            });
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                try { PumpStream(process.StandardError, stderr, onLine); }
-                finally { errDone.Set(); }
-            });
-            if (!process.WaitForExit(timeoutMs))
-            {
-                try { process.Kill(); } catch { }
-                outDone.WaitOne(2000);
-                errDone.WaitOne(2000);
-                return new AdbResult { ExitCode = -1, TimedOut = true, Stdout = stdout.ToString(), Stderr = stderr.ToString() };
+                if (stopping)
+                    return new AdbResult { ExitCode = -1, Stdout = "", Stderr = "Nanally 正在退出，已取消 ADB 操作" };
+                process.Start();
+                activeProcesses.Add(process);
             }
-            process.WaitForExit();
-            outDone.WaitOne(5000);
-            errDone.WaitOne(5000);
-            return new AdbResult { ExitCode = process.ExitCode, Stdout = stdout.ToString(), Stderr = stderr.ToString() };
+            try
+            {
+                if (onStart != null)
+                    onStart(process);
+                var outDone = new ManualResetEvent(false);
+                var errDone = new ManualResetEvent(false);
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try { PumpStream(process.StandardOutput, stdout, onLine); }
+                    finally { outDone.Set(); }
+                });
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try { PumpStream(process.StandardError, stderr, onLine); }
+                    finally { errDone.Set(); }
+                });
+                if (!process.WaitForExit(timeoutMs))
+                {
+                    try { process.Kill(); } catch { }
+                    outDone.WaitOne(2000);
+                    errDone.WaitOne(2000);
+                    return new AdbResult { ExitCode = -1, TimedOut = true, Stdout = stdout.ToString(), Stderr = stderr.ToString() };
+                }
+                process.WaitForExit();
+                outDone.WaitOne(5000);
+                errDone.WaitOne(5000);
+                return new AdbResult { ExitCode = process.ExitCode, Stdout = stdout.ToString(), Stderr = stderr.ToString() };
+            }
+            finally
+            {
+                lock (processLock) { activeProcesses.Remove(process); }
+                process.Dispose();
+            }
         }
 
         static void PumpStream(StreamReader reader, StringBuilder capture, Action<string> onLine)
@@ -1229,9 +1319,12 @@ namespace Nanally
             return line;
         }
 
-        public static string FindContentRoot(string tempDir)
+        public static string FindContentRoot(string tempDir, string remote)
         {
-            var wrapped = Path.Combine(tempDir, "Logs");
+            var leaf = remote.Substring(remote.LastIndexOf('/') + 1);
+            if (leaf.Length == 0)
+                return tempDir;
+            var wrapped = Path.Combine(tempDir, leaf);
             if (Directory.Exists(wrapped))
                 return wrapped;
             return tempDir;
@@ -1240,6 +1333,38 @@ namespace Nanally
 
     static class Apk
     {
+        static readonly object transferLock = new object();
+
+        static bool RetryableTransferFailure(AdbResult result)
+        {
+            if (result.TimedOut)
+                return true;
+            var output = (result.Stdout ?? "") + "\n" + (result.Stderr ?? "");
+            return (result.ExitCode == -1 && string.IsNullOrWhiteSpace(output))
+                || Regex.IsMatch(output, @"broken pipe|failed to read copy response: EOF|connection reset", RegexOptions.IgnoreCase);
+        }
+
+        static void LogTransferResult(string serial, int attempt, AdbResult result, Action<string> onLine)
+        {
+            var message = "ADB 推送失败 attempt=" + attempt.ToString(CultureInfo.InvariantCulture)
+                + " exit=" + result.ExitCode.ToString(CultureInfo.InvariantCulture)
+                + " timeout=" + result.TimedOut.ToString()
+                + " stdout=" + result.Stdout + " stderr=" + result.Stderr;
+            WhatHappened.Info("apk [" + serial + "] " + message);
+            if (onLine != null)
+                onLine("推送失败（exit " + result.ExitCode.ToString(CultureInfo.InvariantCulture) + "）"
+                    + (result.TimedOut ? "，已超时" : ""));
+        }
+
+        public static bool InstallSucceeded(AdbResult result)
+        {
+            if (result == null || result.TimedOut)
+                return false;
+            var output = (result.Stdout ?? "") + "\n" + (result.Stderr ?? "");
+            if (Regex.IsMatch(output, @"failure|error:|device offline|device not found|no devices", RegexOptions.IgnoreCase))
+                return false;
+            return Regex.IsMatch(output, @"^\s*Success\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+        }
         public static string FindAapt()
         {
             var env = Environment.GetEnvironmentVariable("AAPT");
@@ -1374,20 +1499,38 @@ namespace Nanally
             var flags = "-r -t ";
             if (useAdbInstall)
             {
-                // 直接走 adb install 流式通道；适合对照 push+pm，或个别机型 pm 路径异常时切换。
                 if (onPhase != null)
-                    onPhase("install");
-                return Adb.Run(adb, serial, "install " + flags + quoted, 600000, null, onLine);
+                    onPhase("queued");
+                // adb install 内部包含传输，整个命令排队，避免再次并行传大包。
+                lock (transferLock)
+                {
+                    if (onPhase != null)
+                        onPhase("install");
+                    return Adb.Run(adb, serial, "install " + flags + quoted, 600000, null, onLine);
+                }
             }
 
-            // push + pm install：大包在不少机型上比 adb install 流式通道更快，也方便并行时各写各的临时文件。
             var safeSerial = (serial ?? "device").Replace(":", "_").Replace("\"", "");
             var remote = "/data/local/tmp/nanally_" + safeSerial + ".apk";
             if (onPhase != null)
-                onPhase("push");
-            var push = Adb.Run(adb, serial, "push " + quoted + " " + remote, 600000, null, onLine);
-            if (push.TimedOut || push.ExitCode != 0)
-                return push;
+                onPhase("queued");
+            lock (transferLock)
+            {
+                for (var attempt = 1; attempt <= 2; attempt++)
+                {
+                    if (onPhase != null)
+                        onPhase("push");
+                    var push = Adb.Run(adb, serial, "push " + quoted + " " + remote, 600000, null, onLine);
+                    if (!push.TimedOut && push.ExitCode == 0)
+                        break;
+                    LogTransferResult(serial, attempt, push, onLine);
+                    if (attempt == 2 || !RetryableTransferFailure(push))
+                        return push;
+                    if (onLine != null)
+                        onLine("ADB 传输中断，自动重试推送一次");
+                }
+            }
+            // 推送完成即释放传输锁，设备端安装可以与下一台推送重叠。
             if (onPhase != null)
                 onPhase("install");
             var installed = Adb.Run(adb, serial, "shell pm install " + flags + remote, 300000, null, onLine);
@@ -1447,6 +1590,7 @@ namespace Nanally
 
         TextBlock statusText;
         TextBlock previewName;
+        TextBlock remoteSourceText;
         StackPanel deviceHost;
         Border deviceCard;
         Popup devicePopup;
@@ -1480,6 +1624,7 @@ namespace Nanally
         Grid pageMedia;
         Grid pageApk;
         TextBox setLogsBox;
+        TextBox setRemoteLogsBox;
         TextBox setAppIdBox;
         PasswordBox setTokenBox;
         TextBox setChatBox;
@@ -1564,6 +1709,7 @@ namespace Nanally
                 Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
                 CloseDeviceMenu();
                 KillPull();
+                Adb.StopAll();
             };
         }
 
@@ -1750,14 +1896,15 @@ namespace Nanally
             previewName = Line("logs/设备名+日期时间", 15, Theme.Ink, FontWeights.SemiBold);
             previewName.Margin = new Thickness(0, 4, 0, 0);
             save.Children.Add(previewName);
-            save.Children.Add(new TextBlock
+            remoteSourceText = new TextBlock
             {
-                Text = "来自 Android/data/com.piegame.bd/files/Logs",
+                Text = "来自 " + Adb.NormalizeRemoteLogs(settings.RemoteLogsDir),
                 FontSize = 12,
                 Foreground = Theme.Label,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 8, 0, 0)
-            });
+            };
+            save.Children.Add(remoteSourceText);
             stack.Children.Add(Card(save));
             return scroller;
         }
@@ -2346,6 +2493,8 @@ namespace Nanally
             }
             if (sendButton != null)
                 sendButton.IsEnabled = !busy && selected != null && selected.IsReady && adbExe != null;
+            if (mediaCopyButton != null)
+                mediaCopyButton.IsEnabled = !busy && selected != null && selected.IsReady && adbExe != null;
             UpdateMediaCount();
             if (refreshText != null)
                 refreshText.Opacity = busy ? 0.35 : 1;
@@ -2429,7 +2578,7 @@ namespace Nanally
 
         CopyResult DoCopy(string adb, string serial, string deviceName, string root)
         {
-            var remote = Adb.RemoteLogs;
+            var remote = Adb.NormalizeRemoteLogs(settings.RemoteLogsDir);
             var listed = Adb.Run(adb, serial, "shell ls \"" + remote + "\"", 20000, null);
             if (listed.TimedOut)
                 return CopyResult.Fail("读取手机目录超时了");
@@ -2464,7 +2613,7 @@ namespace Nanally
                     return CopyResult.Fail(detail);
                 }
 
-                var content = Adb.FindContentRoot(temp);
+                var content = Adb.FindContentRoot(temp, remote);
                 var files = Directory.GetFiles(content, "*", SearchOption.AllDirectories);
                 if (files.Length == 0)
                     return CopyResult.Fail("这个路径下没有文件");

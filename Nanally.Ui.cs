@@ -47,6 +47,8 @@ namespace Nanally
     sealed class AppSettings
     {
         public string LogsDir = "";
+        public string RemoteLogsDir = "";
+        public string MediaCopyDir = "";
         public string FeishuAppId = "";
         public string FeishuToken = "";
         public string FeishuChatId = "";
@@ -82,6 +84,8 @@ namespace Nanally
                     return s;
                 var text = File.ReadAllText(path, Encoding.UTF8);
                 s.LogsDir = Read(text, "LogsDir");
+                s.RemoteLogsDir = Read(text, "RemoteLogsDir");
+                s.MediaCopyDir = Read(text, "MediaCopyDir");
                 s.FeishuAppId = Read(text, "FeishuAppId");
                 s.FeishuToken = Read(text, "FeishuToken");
                 s.FeishuChatId = Read(text, "FeishuChatId");
@@ -107,6 +111,8 @@ namespace Nanally
                 Directory.CreateDirectory(dir);
             var json = "{"
                 + "\"LogsDir\":\"" + Esc(LogsDir) + "\","
+                + "\"RemoteLogsDir\":\"" + Esc(RemoteLogsDir) + "\","
+                + "\"MediaCopyDir\":\"" + Esc(MediaCopyDir) + "\","
                 + "\"FeishuAppId\":\"" + Esc(FeishuAppId) + "\","
                 + "\"FeishuToken\":\"" + Esc(FeishuToken) + "\","
                 + "\"FeishuChatId\":\"" + Esc(FeishuChatId) + "\","
@@ -174,6 +180,8 @@ namespace Nanally
         Button segVideos;
         int mediaFilterIndex;
         Button selectAllButton;
+        Button mediaCopyButton;
+        bool mediaCopying;
         readonly List<Border> mediaTileCards = new List<Border>();
         readonly List<Border> mediaTileFrames = new List<Border>();
         double lastFitWidth = -1;
@@ -1360,7 +1368,7 @@ namespace Nanally
             mediaBarStatus = new TextBlock
             {
                 FontSize = 11,
-                MaxWidth = 380,
+                MaxWidth = 260,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Visibility = Visibility.Collapsed,
                 Margin = new Thickness(0, 1, 0, 0)
@@ -1378,9 +1386,16 @@ namespace Nanally
             };
             Grid.SetColumn(cancel, 1);
             grid.Children.Add(cancel);
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            mediaCopyButton = SmallButton("拷贝到目录");
+            mediaCopyButton.Margin = new Thickness(0, 0, 8, 0);
+            mediaCopyButton.ToolTip = "保存勾选的截图或录屏，同名文件自动改名";
+            mediaCopyButton.Click += delegate { CopySelectedMediaAsync(); };
+            Grid.SetColumn(mediaCopyButton, 2);
+            grid.Children.Add(mediaCopyButton);
             sendButton = MakePrimary("发给自己");
             sendButton.Click += delegate { SendSelectedAsync(); };
-            Grid.SetColumn(sendButton, 2);
+            Grid.SetColumn(sendButton, 3);
             grid.Children.Add(sendButton);
             bar.Child = grid;
             return bar;
@@ -1391,6 +1406,7 @@ namespace Nanally
             if (mediaBarStatus == null || currentPage != "media")
                 return;
             mediaBarStatus.Text = text ?? "";
+            mediaBarStatus.ToolTip = text;
             mediaBarStatus.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
             var key = Theme.Key(brush ?? Theme.Label);
             if (key != null)
@@ -1974,7 +1990,7 @@ namespace Nanally
                 + " devices=" + ready.Count.ToString(CultureInfo.InvariantCulture)
                 + " uninstallFirst=" + (uninstallFirst ? "1" : "0")
                 + " allDevices=" + (settings.ApkInstallAllDevices ? "1" : "0")
-                + " useAdbInstall=" + (useAdbInstall ? "1" : "0"));
+                + " useAdbInstall=" + (useAdbInstall ? "1" : "0") + " adb=" + adb);
             ShowApkProgress(null, 1, false);
             SetStatus("正在安装到 " + ready.Count.ToString(CultureInfo.InvariantCulture) + " 台手机…", Theme.Label);
 
@@ -2063,7 +2079,7 @@ namespace Nanally
                     {
                         AppendApkLog("开始 " + fileName + (string.IsNullOrEmpty(pkg) ? "" : "（" + pkg + "）")
                             + " → " + deviceCount.ToString(CultureInfo.InvariantCulture) + " 台"
-                            + (deviceCount > 1 ? "（并行）" : "")
+                            + (deviceCount > 1 ? (useAdbInstall ? "（排队安装）" : "（排队推送 · 并行安装）") : "")
                             + " · " + (useAdbInstall ? "adb install" : "push + pm"), Theme.Ink);
                         ShowApkProgress(null, 5, false);
                     }));
@@ -2206,8 +2222,13 @@ namespace Nanally
             {
                 phase = next ?? phase;
                 phaseStarted = DateTime.UtcNow;
-                if (string.Equals(phase, "push", StringComparison.Ordinal))
+                if (string.Equals(phase, "queued", StringComparison.Ordinal))
                 {
+                    RowText(serial, "排队等待传输", 0);
+                }
+                else if (string.Equals(phase, "push", StringComparison.Ordinal))
+                {
+                    lastPct = -1;
                     bump(10);
                     RowText(serial, "开始推送", 0);
                     Dispatcher.BeginInvoke(new Action(delegate
@@ -2250,6 +2271,19 @@ namespace Nanally
                         SetStatus("正在安装到 " + label + "…", Theme.Label);
                 }));
 
+                phase = "check";
+                RowText(serial, "检查设备连接…", 0);
+                var probe = Adb.Run(adb, serial, "shell echo NANALLY_READY", 8000, null);
+                if (probe.TimedOut || probe.ExitCode != 0 || (probe.Stdout ?? "").Trim() != "NANALLY_READY")
+                {
+                    lock (countLock) { counts[1]++; }
+                    bump(100);
+                    var probeMessage = label + " ADB 通道无响应，请解锁手机并重新插拔 USB 后重试";
+                    RowText(serial, "ADB 通道无响应，请重新插拔 USB", 2);
+                    Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(probeMessage, Theme.Red); }));
+                    return;
+                }
+
                 if (uninstallFirst && !string.IsNullOrEmpty(packageName))
                 {
                     if (Apk.IsInstalled(adb, device.Serial, packageName))
@@ -2278,24 +2312,14 @@ namespace Nanally
                 {
                     lock (countLock) { counts[1]++; }
                     bump(100);
-                    Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(label + " 安装超时（可看手机是否还在等确认）", Theme.Red); }));
-                    RowText(serial, "安装超时，看看手机是不是还在等确认", 2);
+                    var timeoutMessage = phase == "push"
+                        ? "推送超时，请检查 USB 连接并重新插拔"
+                        : "安装超时，请检查手机确认框和 USB 连接";
+                    Dispatcher.BeginInvoke(new Action(delegate { AppendApkLog(label + " " + timeoutMessage, Theme.Red); }));
+                    RowText(serial, timeoutMessage, 2);
                     return;
                 }
-                var outText = ((installed.Stdout ?? "") + "\n" + (installed.Stderr ?? "")).ToLowerInvariant();
-                // 不少机型会打出 Success 但 adb/shell 退出码非 0；以文案为准，再用 pm path 兜底。
-                var success = outText.IndexOf("success") >= 0;
-                if (!success && outText.IndexOf("failure") < 0 && outText.IndexOf("error:") < 0 && installed.ExitCode == 0)
-                    success = true;
-                if (!success)
-                {
-                    var pkg = packageName;
-                    string pkgErr;
-                    if (string.IsNullOrEmpty(pkg))
-                        pkg = Apk.ReadPackageName(apkPath, out pkgErr);
-                    if (!string.IsNullOrEmpty(pkg) && Apk.IsInstalled(adb, device.Serial, pkg))
-                        success = true;
-                }
+                var success = Apk.InstallSucceeded(installed);
                 bump(100);
                 if (success)
                 {
@@ -3385,7 +3409,9 @@ namespace Nanally
             }
             var label = picked > 0 ? "发给自己（" + picked.ToString(CultureInfo.InvariantCulture) + "）" : "发给自己";
             if (sendButton != null)
-                sendButton.Content = busy && currentPage == "media" ? "正在发送…" : label;
+                sendButton.Content = busy && !mediaCopying && currentPage == "media" ? "正在发送…" : label;
+            if (mediaCopyButton != null)
+                mediaCopyButton.Content = mediaCopying ? "正在拷贝…" : "拷贝到目录";
             if (previewSend != null)
                 previewSend.Content = label;
             if (selectAllButton != null)
@@ -3458,6 +3484,86 @@ namespace Nanally
                     item.CheckHost.IsChecked = value;
             }
             UpdateMediaCount();
+        }
+
+        void CopySelectedMediaAsync()
+        {
+            if (busy)
+                return;
+            var chosen = new List<MediaItem>();
+            foreach (var item in mediaItems)
+                if (item.IsChecked)
+                    chosen.Add(item);
+            if (chosen.Count == 0)
+            {
+                SetStatus("先勾选要拷贝的截图或录屏", Theme.Orange);
+                return;
+            }
+            if (selected == null || !selected.IsReady || adbExe == null)
+            {
+                SetStatus("手机不在线", Theme.Red);
+                return;
+            }
+            string destination;
+            using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+            {
+                dialog.Description = "选择截图 / 录屏保存目录";
+                dialog.SelectedPath = Directory.Exists(settings.MediaCopyDir) ? settings.MediaCopyDir
+                    : Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                    return;
+                destination = dialog.SelectedPath;
+            }
+            settings.MediaCopyDir = destination;
+            try { settings.Save(); }
+            catch (Exception ex) { WhatHappened.Error("保存媒体目录设置失败: " + ex.Message); }
+            var adb = adbExe;
+            var serial = selected.Serial;
+            busy = true;
+            mediaCopying = true;
+            UpdateButtons();
+            SetStatus("正在准备拷贝…", Theme.Label);
+            WhatHappened.Info("媒体拷贝开始 count=" + chosen.Count.ToString(CultureInfo.InvariantCulture));
+            Task.Run(delegate
+            {
+                var copied = 0;
+                var failed = 0;
+                var lastError = "";
+                for (var i = 0; i < chosen.Count; i++)
+                {
+                    var item = chosen[i];
+                    var progress = "正在拷贝 " + (i + 1).ToString(CultureInfo.InvariantCulture) + "/"
+                        + chosen.Count.ToString(CultureInfo.InvariantCulture) + " " + item.Name;
+                    Dispatcher.BeginInvoke(new Action(delegate { SetStatus(progress, Theme.Label); }));
+                    try
+                    {
+                        var local = EnsureLocal(adb, serial, item);
+                        if (item.Size > 0 && new FileInfo(local).Length != item.Size)
+                            throw new IOException("文件大小不完整，请重新读取设备后重试");
+                        Paths.CopyMediaFile(local, destination, item.Name);
+                        copied++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        lastError = item.Name + "：" + ex.Message;
+                        WhatHappened.Error("媒体拷贝失败: " + lastError);
+                    }
+                }
+                var message = "已拷贝 " + copied.ToString(CultureInfo.InvariantCulture) + " 项到 " + destination;
+                if (failed > 0)
+                    message += "；失败 " + failed.ToString(CultureInfo.InvariantCulture) + " 项，" + lastError;
+                WhatHappened.Info("媒体拷贝完成: " + message);
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    busy = false;
+                    mediaCopying = false;
+                    UpdateButtons();
+                    SetStatus(message, failed == 0 ? Theme.Ok : Theme.Orange);
+                    if (mediaBarStatus != null)
+                        mediaBarStatus.ToolTip = message;
+                }));
+            });
         }
 
         void SendSelectedAsync()
@@ -4079,6 +4185,7 @@ namespace Nanally
         {
             applyingTheme = true;
             setLogsBox.Text = settings.LogsDir;
+            setRemoteLogsBox.Text = Adb.NormalizeRemoteLogs(settings.RemoteLogsDir);
             setAppIdBox.Text = settings.FeishuAppId;
             setTokenBox.Password = "";
             UpdateTokenPlaceholder();
@@ -4401,6 +4508,24 @@ namespace Nanally
             BindLabel(pathStats);
             pathStats.Opacity = 0.85;
             stack.Children.Add(pathStats);
+
+            stack.Children.Add(Divider());
+            stack.Children.Add(FieldTitle("手机上的日志目录"));
+            stack.Children.Add(FieldNote("「拷贝日志」从手机的这个目录拉。换项目时改包名即可，可以只写 Android/data/包名/files/logs，会自动补 /sdcard/。留空恢复默认。"));
+            var remoteRow = new Grid();
+            remoteRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            remoteRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            setRemoteLogsBox = FieldBox(Adb.NormalizeRemoteLogs(settings.RemoteLogsDir));
+            setRemoteLogsBox.Margin = new Thickness(0);
+            setRemoteLogsBox.FontFamily = MonoFont;
+            setRemoteLogsBox.FontSize = 12;
+            remoteRow.Children.Add(setRemoteLogsBox);
+            var resetRemote = SmallButton("恢复默认");
+            resetRemote.Margin = new Thickness(8, 0, 0, 0);
+            resetRemote.Click += delegate { setRemoteLogsBox.Text = Adb.RemoteLogs; };
+            Grid.SetColumn(resetRemote, 1);
+            remoteRow.Children.Add(resetRemote);
+            stack.Children.Add(remoteRow);
 
             stack.Children.Add(Divider());
             stack.Children.Add(FieldTitle("Nanally 运行日志"));
@@ -5292,6 +5417,11 @@ namespace Nanally
                 RefreshLogsList();
                 UpdatePathStats();
             }
+            var remote = Adb.NormalizeRemoteLogs(setRemoteLogsBox.Text);
+            settings.RemoteLogsDir = remote == Adb.RemoteLogs ? "" : remote;
+            setRemoteLogsBox.Text = remote;
+            if (remoteSourceText != null)
+                remoteSourceText.Text = "来自 " + remote;
             settings.FeishuAppId = setAppIdBox.Text == null ? "" : setAppIdBox.Text.Trim();
             settings.FeishuChatId = setChatBox.Text == null ? "" : setChatBox.Text.Trim();
             var token = setTokenBox.Password == null ? "" : setTokenBox.Password.Trim();
