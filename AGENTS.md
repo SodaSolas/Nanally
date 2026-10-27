@@ -47,7 +47,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 | `%LocalAppData%\Nanally\preview` | 缩略图缓存 |
 | `.nanally-send\` | 发送前的临时拉取目录，发完删 |
 
-`AppSettings` 字段：`LogsDir`、`RemoteLogsDir`（手机端日志目录，空 = 默认）、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Blue`；Pink/Blue/Green）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）、`ApkUseAdbInstall`（默认 false；true 时走 `adb install -r -t`，false 时走 push+pm）。浅色色板按 `D:\tools\GlassWidgetStyle\README.md`（半透明白卡片、冰蓝强调）。空的会话 ID 保持空，不会回填，也不会去飞书查询。
+`AppSettings` 字段：`LogsDir`、`RemoteLogsDir`（手机端日志目录，空 = 默认）、`RemoteLogsHistory`（用过的手机端目录，换行分隔）、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Blue`；Pink/Blue/Green）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）、`ApkUseAdbInstall`（默认 false；true 时走 `adb install -r -t`，false 时走 push+pm）。浅色色板按 `D:\tools\GlassWidgetStyle\README.md`（半透明白卡片、冰蓝强调）。空的会话 ID 保持空，不会回填，也不会去飞书查询。
 
 ## 界面
 
@@ -83,7 +83,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 
 ## 提取日志
 
-远程目录：设置 → 目录 →「手机上的日志目录」（`AppSettings.RemoteLogsDir`，空 = 默认 `Adb.RemoteLogs` 即 `/sdcard/Android/data/com.piegame.bd/files/Logs`）。用 `Adb.NormalizeRemoteLogs` 取值：不以 `/` 开头就补 `/sdcard/`，去掉末尾 `/`。存的时候等于默认就存空。
+远程目录：设置 → 目录 →「手机上的日志目录」（`AppSettings.RemoteLogsDir`，空 = 默认 `Adb.RemoteLogs` 即 `/sdcard/Android/data/com.piegame.bd/files/Logs`）。用 `Adb.NormalizeRemoteLogs` 取值：不以 `/` 开头就补 `/sdcard/`，去掉末尾 `/`。存的时候等于默认就存空。输入框右边「历史」按钮弹出下拉（`OpenRemoteHistory`，样式同设备下拉）：`RemoteLogsHistory` 换行分隔，保存时 `RememberRemoteLogs` 把当前值提到最前，最多 10 条；默认目录不进历史，固定在下拉最后标「默认」；每条可点 × 删除。选中只填输入框，点「保存」才生效。
 
 `adb pull` 会在本地再包一层远程目录的末段名（如 `Logs` / `logs`，`FindContentRoot(temp, remote)`）。拷贝时取这层里面的内容，不要把 `Logs` 外壳再套进去。
 

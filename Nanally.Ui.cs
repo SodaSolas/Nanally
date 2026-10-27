@@ -48,6 +48,7 @@ namespace Nanally
     {
         public string LogsDir = "";
         public string RemoteLogsDir = "";
+        public string RemoteLogsHistory = "";
         public string MediaCopyDir = "";
         public string FeishuAppId = "";
         public string FeishuToken = "";
@@ -85,6 +86,7 @@ namespace Nanally
                 var text = File.ReadAllText(path, Encoding.UTF8);
                 s.LogsDir = Read(text, "LogsDir");
                 s.RemoteLogsDir = Read(text, "RemoteLogsDir");
+                s.RemoteLogsHistory = Read(text, "RemoteLogsHistory");
                 s.MediaCopyDir = Read(text, "MediaCopyDir");
                 s.FeishuAppId = Read(text, "FeishuAppId");
                 s.FeishuToken = Read(text, "FeishuToken");
@@ -112,6 +114,7 @@ namespace Nanally
             var json = "{"
                 + "\"LogsDir\":\"" + Esc(LogsDir) + "\","
                 + "\"RemoteLogsDir\":\"" + Esc(RemoteLogsDir) + "\","
+                + "\"RemoteLogsHistory\":\"" + Esc(RemoteLogsHistory) + "\","
                 + "\"MediaCopyDir\":\"" + Esc(MediaCopyDir) + "\","
                 + "\"FeishuAppId\":\"" + Esc(FeishuAppId) + "\","
                 + "\"FeishuToken\":\"" + Esc(FeishuToken) + "\","
@@ -4520,10 +4523,22 @@ namespace Nanally
             setRemoteLogsBox.FontFamily = MonoFont;
             setRemoteLogsBox.FontSize = 12;
             remoteRow.Children.Add(setRemoteLogsBox);
+            remoteRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var historyRemote = SmallButton("历史");
+            historyRemote.Margin = new Thickness(8, 0, 0, 0);
+            historyRemote.ToolTip = "选择用过的目录";
+            historyRemote.Click += delegate
+            {
+                if ((DateTime.UtcNow - remoteHistoryClosedAt).TotalMilliseconds < 250)
+                    return;
+                OpenRemoteHistory(remoteRow);
+            };
+            Grid.SetColumn(historyRemote, 1);
+            remoteRow.Children.Add(historyRemote);
             var resetRemote = SmallButton("恢复默认");
             resetRemote.Margin = new Thickness(8, 0, 0, 0);
             resetRemote.Click += delegate { setRemoteLogsBox.Text = Adb.RemoteLogs; };
-            Grid.SetColumn(resetRemote, 1);
+            Grid.SetColumn(resetRemote, 2);
             remoteRow.Children.Add(resetRemote);
             stack.Children.Add(remoteRow);
 
@@ -4555,6 +4570,143 @@ namespace Nanally
             actions.Children.Add(pathHint);
             stack.Children.Add(actions);
             return stack;
+        }
+
+        List<string> RemoteLogsHistory()
+        {
+            var list = new List<string>();
+            foreach (var line in (settings.RemoteLogsHistory ?? "").Split('\n'))
+            {
+                var p = line.Trim();
+                if (p.Length > 0 && p != Adb.RemoteLogs && !list.Contains(p))
+                    list.Add(p);
+            }
+            return list;
+        }
+
+        // 最近用的排最前，最多 10 条；默认目录不进历史，下拉里固定放最后。
+        void RememberRemoteLogs(string remote)
+        {
+            var list = RemoteLogsHistory();
+            list.Remove(remote);
+            if (remote != Adb.RemoteLogs)
+                list.Insert(0, remote);
+            if (list.Count > 10)
+                list.RemoveRange(10, list.Count - 10);
+            settings.RemoteLogsHistory = string.Join("\n", list.ToArray());
+        }
+
+        void OpenRemoteHistory(FrameworkElement anchor)
+        {
+            if (remoteHistoryPopup == null)
+            {
+                remoteHistoryPopup = new Popup
+                {
+                    Placement = PlacementMode.Bottom,
+                    StaysOpen = false,
+                    AllowsTransparency = true,
+                    PopupAnimation = PopupAnimation.Fade,
+                    VerticalOffset = 4
+                };
+                remoteHistoryPopup.Closed += delegate { remoteHistoryClosedAt = DateTime.UtcNow; };
+            }
+            var list = new StackPanel();
+            foreach (var path in RemoteLogsHistory())
+                list.Children.Add(RemoteHistoryRow(path, false));
+            list.Children.Add(RemoteHistoryRow(Adb.RemoteLogs, true));
+            remoteHistoryPopup.Child = new Border
+            {
+                Background = Theme.Card,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(4),
+                Child = new ScrollViewer
+                {
+                    MaxHeight = 260,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = list
+                },
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 18,
+                    ShadowDepth = 4,
+                    Opacity = 0.35,
+                    Color = Colors.Black
+                }
+            };
+            remoteHistoryPopup.PlacementTarget = anchor;
+            remoteHistoryPopup.Width = anchor.ActualWidth > 0 ? anchor.ActualWidth : 480;
+            remoteHistoryPopup.IsOpen = true;
+        }
+
+        UIElement RemoteHistoryRow(string path, bool isDefault)
+        {
+            var current = Adb.NormalizeRemoteLogs(setRemoteLogsBox.Text) == path;
+            var row = new Border
+            {
+                Padding = new Thickness(10, 7, 6, 7),
+                CornerRadius = new CornerRadius(6),
+                Background = current ? Theme.MenuHover : Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new TextBlock
+            {
+                Text = path,
+                FontFamily = MonoFont,
+                FontSize = 12,
+                Foreground = Theme.Ink,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = path
+            };
+            grid.Children.Add(text);
+            if (isDefault)
+            {
+                var tag = new TextBlock { Text = "默认", FontSize = 11.5, Foreground = Theme.Label, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 4, 0) };
+                Grid.SetColumn(tag, 1);
+                grid.Children.Add(tag);
+            }
+            else
+            {
+                var remove = new TextBlock
+                {
+                    Text = "",
+                    FontFamily = Theme.IconFont,
+                    FontSize = 10,
+                    Foreground = Theme.Label,
+                    Padding = new Thickness(6, 4, 6, 4),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Background = Brushes.Transparent,
+                    ToolTip = "从历史里删掉"
+                };
+                remove.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
+                {
+                    e.Handled = true;
+                    var list = RemoteLogsHistory();
+                    list.Remove(path);
+                    settings.RemoteLogsHistory = string.Join("\n", list.ToArray());
+                    try { settings.Save(); } catch { }
+                    OpenRemoteHistory((FrameworkElement)remoteHistoryPopup.PlacementTarget);
+                };
+                Grid.SetColumn(remove, 1);
+                grid.Children.Add(remove);
+            }
+            row.Child = grid;
+            row.MouseEnter += delegate { if (!current) row.Background = Theme.RowHover; };
+            row.MouseLeave += delegate { row.Background = current ? Theme.MenuHover : Brushes.Transparent; };
+            row.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
+            {
+                e.Handled = true;
+                setRemoteLogsBox.Text = path;
+                remoteHistoryPopup.IsOpen = false;
+                SetSettingsHint("已选好，点「保存」生效", Theme.Label);
+            };
+            return row;
         }
 
         void UpdatePathStats()
@@ -5419,6 +5571,7 @@ namespace Nanally
             }
             var remote = Adb.NormalizeRemoteLogs(setRemoteLogsBox.Text);
             settings.RemoteLogsDir = remote == Adb.RemoteLogs ? "" : remote;
+            RememberRemoteLogs(remote);
             setRemoteLogsBox.Text = remote;
             if (remoteSourceText != null)
                 remoteSourceText.Text = "来自 " + remote;

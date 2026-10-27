@@ -1625,6 +1625,8 @@ namespace Nanally
         Grid pageApk;
         TextBox setLogsBox;
         TextBox setRemoteLogsBox;
+        Popup remoteHistoryPopup;
+        DateTime remoteHistoryClosedAt;
         TextBox setAppIdBox;
         PasswordBox setTokenBox;
         TextBox setChatBox;
