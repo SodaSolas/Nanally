@@ -17,6 +17,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shell;
 using System.Windows.Threading;
@@ -54,7 +55,7 @@ namespace Nanally
         public string FeishuToken = "";
         public string FeishuChatId = "";
         public string ThemeMode = "Light";
-        public string Accent = "Blue";
+        public string Accent = "Pink";
         public bool FollowSystem;
         public bool EnableGlass = true;
         public bool SidebarExpanded = true;
@@ -94,7 +95,7 @@ namespace Nanally
                 var theme = Read(text, "ThemeMode");
                 s.ThemeMode = theme == "Dark" ? "Dark" : "Light";
                 var accent = Read(text, "Accent");
-                s.Accent = accent == "Pink" || accent == "Green" ? accent : "Blue";
+                s.Accent = accent == "Blue" || accent == "Green" ? accent : "Pink";
                 s.FollowSystem = Read(text, "FollowSystem") == "true";
                 s.EnableGlass = Read(text, "EnableGlass") != "false";
                 s.SidebarExpanded = Read(text, "SidebarExpanded") != "false";
@@ -171,6 +172,9 @@ namespace Nanally
         UIElement mediaEmptyHost;
         TextBlock mediaEmptyTitle;
         TextBlock mediaEmptyMark;
+        Border mediaEmptyWarn;
+        TextBlock mediaEmptyBubble;
+        Border mediaEmptyBubbleHost;
         WrapPanel mediaEmptyTips;
         bool mediaLoading;
         string mediaLoadError;
@@ -577,9 +581,10 @@ namespace Nanally
         {
             var btn = new Button
             {
-                Margin = new Thickness(12, 4, 12, 4),
+                // 带标签的页面按钮高 48：上面 8px 留给狐狸耳朵，图标块贴底。耳朵伸出按钮会被裁掉。
+                Margin = string.IsNullOrEmpty(label) ? new Thickness(12, 5, 12, 5) : new Thickness(12, 0, 12, 2),
                 Padding = new Thickness(0),
-                Height = 40,
+                Height = string.IsNullOrEmpty(label) ? 40 : 48,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Cursor = Cursors.Hand,
@@ -598,7 +603,7 @@ namespace Nanally
                 Height = 40,
                 CornerRadius = new CornerRadius(10),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
                 Child = StrokeIcon(iconData, 20, Theme.Ink)
             };
             grid.Children.Add(tile);
@@ -607,18 +612,25 @@ namespace Nanally
                 var text = new TextBlock
                 {
                     Text = label,
-                    Margin = new Thickness(10, 0, 0, 0),
+                    Margin = new Thickness(10, 8, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     Visibility = Visibility.Collapsed
                 };
                 Grid.SetColumn(text, 1);
                 grid.Children.Add(text);
             }
+            if (!string.IsNullOrEmpty(label))
+            {
+                grid.Height = 48;
+                grid.Children.Add(FoxEars());
+            }
             btn.Content = grid;
             btn.MouseEnter += delegate
             {
                 if (!Equals(tile.Tag, "on"))
                     tile.Background = Theme.NavHover;
+                else
+                    TwitchEar(EarsOf(btn));
             };
             btn.MouseLeave += delegate
             {
@@ -635,11 +647,19 @@ namespace Nanally
             var tile = IconTile(tab);
             if (tile == null)
                 return;
+            var wasOn = Equals(tile.Tag, "on");
             tile.Tag = active ? "on" : "off";
             tile.Background = active ? Theme.Pink : Brushes.Transparent;
             var icon = IconPathOf(tile);
             if (icon != null)
-                icon.Stroke = active ? Brushes.White : Theme.Ink;
+                icon.Stroke = active ? Theme.OnAccent : Theme.Ink;
+            var ears = EarsOf(tab);
+            if (ears != null)
+            {
+                ears.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+                if (active && !wasOn)
+                    PopEars(ears);
+            }
             var label = LabelOf(tab);
             if (label != null)
             {
@@ -686,10 +706,119 @@ namespace Nanally
             var tile = IconTile(tab);
             if (tile != null)
                 tile.HorizontalAlignment = expanded ? HorizontalAlignment.Left : HorizontalAlignment.Center;
+            var ears = EarsOf(tab);
+            if (ears != null)
+                ears.HorizontalAlignment = expanded ? HorizontalAlignment.Left : HorizontalAlignment.Center;
+        }
+
+        // 选中的侧栏块头上冒出一对狐狸耳朵（和吉祥物同款）。耳朵压住图标块顶边 4px，颜色一样所以看不出接缝。
+        static Grid FoxEars()
+        {
+            var ears = new Grid
+            {
+                Width = 40,
+                Height = 12,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Tag = "ears"
+            };
+            ears.Children.Add(FoxEar(true));
+            ears.Children.Add(FoxEar(false));
+            return ears;
+        }
+
+        static Grid FoxEar(bool left)
+        {
+            var ear = new Grid
+            {
+                Width = 13,
+                Height = 12,
+                HorizontalAlignment = left ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+                Margin = left ? new Thickness(5, 0, 0, 0) : new Thickness(0, 0, 5, 0),
+                RenderTransformOrigin = new Point(0.5, 1)
+            };
+            var outer = new System.Windows.Shapes.Path { Data = Geometry.Parse("M6.5,0 L13,12 L0,12 Z") };
+            outer.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "nn.Pink");
+            var inner = new System.Windows.Shapes.Path { Data = Geometry.Parse("M6.5,4.5 L9.6,10 L3.4,10 Z") };
+            inner.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "nn.EarInner");
+            ear.Children.Add(outer);
+            ear.Children.Add(inner);
+            var group = new TransformGroup();
+            group.Children.Add(new ScaleTransform(1, 1));
+            group.Children.Add(new RotateTransform(left ? -16 : 16));
+            ear.RenderTransform = group;
+            return ear;
+        }
+
+        static Grid EarsOf(Button tab)
+        {
+            var grid = tab == null ? null : tab.Content as Grid;
+            if (grid == null)
+                return null;
+            foreach (UIElement child in grid.Children)
+            {
+                var fe = child as Grid;
+                if (fe != null && Equals(fe.Tag, "ears"))
+                    return fe;
+            }
+            return null;
+        }
+
+        static void PopEars(Grid ears)
+        {
+            for (var i = 0; i < ears.Children.Count; i++)
+            {
+                var group = ((UIElement)ears.Children[i]).RenderTransform as TransformGroup;
+                if (group == null)
+                    continue;
+                var scale = (ScaleTransform)group.Children[0];
+                var pop = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(520))
+                {
+                    BeginTime = TimeSpan.FromMilliseconds(i * 50),
+                    EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.7 }
+                };
+                scale.ScaleY = 0;
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+            }
+        }
+
+        static void TwitchEar(Grid ears)
+        {
+            if (ears == null || ears.Children.Count < 2)
+                return;
+            var group = ((UIElement)ears.Children[1]).RenderTransform as TransformGroup;
+            if (group == null)
+                return;
+            var rotate = (RotateTransform)group.Children[1];
+            var twitch = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(480) };
+            twitch.KeyFrames.Add(new EasingDoubleKeyFrame(34, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(150)), new SineEase { EasingMode = EasingMode.EaseOut }));
+            twitch.KeyFrames.Add(new EasingDoubleKeyFrame(8, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(320)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+            twitch.KeyFrames.Add(new EasingDoubleKeyFrame(16, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(480)), new SineEase { EasingMode = EasingMode.EaseOut }));
+            rotate.BeginAnimation(RotateTransform.AngleProperty, twitch);
+        }
+
+        // 换页：新页从下面浮上来 10px，0.24s。
+        static void RisePage(UIElement page)
+        {
+            if (page == null)
+                return;
+            var shift = page.RenderTransform as TranslateTransform;
+            if (shift == null)
+            {
+                shift = new TranslateTransform();
+                page.RenderTransform = shift;
+            }
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            var duration = TimeSpan.FromMilliseconds(240);
+            page.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+            shift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, duration) { EasingFunction = ease });
         }
 
         void ShowNav(string page)
         {
+            var changed = currentPage != page;
             currentPage = page;
             if (pageLogs != null)
                 pageLogs.Visibility = page == "logs" ? Visibility.Visible : Visibility.Collapsed;
@@ -737,7 +866,16 @@ namespace Nanally
             if (page == "settings")
                 BindSettingsFields();
             if (page == "about")
+            {
                 BeginAboutUpdateCheck();
+                SwingBadge();
+            }
+            if (changed)
+            {
+                RisePage(page == "logs" ? pageLogs : page == "media" ? pageMedia : page == "apk" ? pageApk : page == "settings" ? pageSettings : pageAbout);
+                if (actionFooter != null && actionFooter.Visibility == Visibility.Visible)
+                    RisePage(actionFooter);
+            }
             PaintNav(tabLogs, page == "logs");
             PaintNav(tabMedia, page == "media");
             PaintNav(tabApk, page == "apk");
@@ -1132,12 +1270,12 @@ namespace Nanally
             {
                 text.Text = mediaItems.Count == 0 ? label : label + " " + count.ToString(CultureInfo.InvariantCulture);
                 if (on)
-                    BindInk(text);
+                    text.SetResourceReference(TextBlock.ForegroundProperty, "nn.Pink");
                 else
                     BindLabel(text);
-                text.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+                text.FontWeight = on ? FontWeights.Bold : FontWeights.Normal;
             }
-            btn.Template = FlatButtonTemplate(on ? (Brush)Theme.Chip : Brushes.Transparent, on ? (Brush)Theme.Chip : Theme.RowHover, 7);
+            btn.Template = FlatButtonTemplate(on ? (Brush)Theme.AccentSoft : Brushes.Transparent, on ? (Brush)Theme.AccentSoft : Theme.RowHover, 7);
         }
 
         Grid BuildLogsPage()
@@ -1207,40 +1345,60 @@ namespace Nanally
                 MaxWidth = 420,
                 Margin = new Thickness(24)
             };
-            var phone = new Border
-            {
-                Width = 48,
-                Height = 80,
-                CornerRadius = new CornerRadius(11),
-                BorderThickness = new Thickness(2.5),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 16)
-            };
-            Theme.BindElement(phone, Border.BorderBrushProperty, "nn.Label");
-            var phoneInner = new Grid();
+            // 吉祥物上下浮着，旁边的气泡按情况换一句话；需要用户动手时头像角上挂一个花黄「!」。
+            var hero = new Grid { Width = 92, Height = 92, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 18) };
+            var avatar = new Grid { Width = 92, Height = 92 };
+            avatar.Children.Add(Portrait(92, 24));
             mediaEmptyMark = new TextBlock
             {
                 Text = "!",
-                FontSize = 22,
+                FontSize = 14,
                 FontWeight = FontWeights.Bold,
+                Foreground = B("#2A1E05"),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            mediaEmptyMark.SetResourceReference(TextBlock.ForegroundProperty, "nn.Orange");
-            phoneInner.Children.Add(mediaEmptyMark);
-            var home = new Border
+            mediaEmptyWarn = new Border
             {
-                Width = 14,
-                Height = 3,
-                CornerRadius = new CornerRadius(1.5),
-                VerticalAlignment = VerticalAlignment.Bottom,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 5)
+                Width = 24,
+                Height = 24,
+                CornerRadius = new CornerRadius(12),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, -6, -6, 0),
+                Child = mediaEmptyMark
             };
-            Theme.BindElement(home, BackgroundProperty, "nn.Label");
-            phoneInner.Children.Add(home);
-            phone.Child = phoneInner;
-            stack.Children.Add(phone);
+            mediaEmptyWarn.SetResourceReference(Border.BackgroundProperty, "nn.Petal");
+            avatar.Children.Add(mediaEmptyWarn);
+            var bob = new TranslateTransform();
+            avatar.RenderTransform = bob;
+            bob.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, -6, TimeSpan.FromMilliseconds(1400))
+            {
+                AutoReverse = true,
+                RepeatBehavior = RepeatBehavior.Forever,
+                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+            });
+            hero.Children.Add(avatar);
+            mediaEmptyBubble = new TextBlock { FontSize = 13, FontWeight = FontWeights.SemiBold };
+            BindInk(mediaEmptyBubble);
+            var bubble = new Border
+            {
+                CornerRadius = new CornerRadius(14, 14, 14, 4),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(14, 9, 14, 10),
+                RenderTransformOrigin = new Point(0, 1),
+                Child = mediaEmptyBubble
+            };
+            Theme.BindElement(bubble, BackgroundProperty, "nn.Menu");
+            Theme.BindElement(bubble, Border.BorderBrushProperty, "nn.Hairline");
+            // 气泡挂在零宽的 Canvas 上，不占布局，头像仍落在正中。
+            var perch = new Canvas { Width = 0, HorizontalAlignment = HorizontalAlignment.Right };
+            Canvas.SetLeft(bubble, 14);
+            Canvas.SetTop(bubble, 12);
+            perch.Children.Add(bubble);
+            hero.Children.Add(perch);
+            mediaEmptyBubbleHost = bubble;
+            stack.Children.Add(hero);
             mediaEmptyTitle = new TextBlock
             {
                 FontSize = 16,
@@ -1271,22 +1429,27 @@ namespace Nanally
                 return;
             string title = null;
             string body = null;
+            string says = null;
             var warn = false;
             var tips = false;
             if (adbExe == null && !mediaLoading)
             {
                 title = "没有找到 adb";
                 body = "装好 Android platform-tools，或把 adb 加进 PATH，再点顶栏的刷新。";
+                says = "我的工具箱里少了 adb";
+                warn = true;
             }
             else if (selected == null)
             {
                 title = "用数据线连上手机";
                 body = "手机打开 USB 调试，连上后点顶栏的刷新。";
+                says = "插上线，我去手机里拿";
             }
             else if (!selected.IsReady)
             {
                 title = "在手机上点「允许 USB 调试」";
                 body = selected.DisplayName + " 已经插上，但还没允许这台电脑调试。手机上点「允许」之后，再点顶栏的刷新。";
+                says = "手机还没让我进门";
                 warn = true;
                 tips = true;
             }
@@ -1294,17 +1457,20 @@ namespace Nanally
             {
                 title = "正在读取…";
                 body = "从 " + selected.DisplayName + " 列出截图和录屏";
+                says = "正在翻相册…";
             }
             else if (mediaItems.Count == 0)
             {
                 title = mediaLoadError != null ? "读取失败" : "手机上没有截图或录屏";
                 body = mediaLoadError ?? "常见的截图、录屏目录里都没找到文件。";
+                says = mediaLoadError != null ? "这次没拿到，再试一次？" : "相册里空空的";
                 warn = mediaLoadError != null;
             }
             else if (mediaVisibleCount == 0)
             {
                 title = "这个筛选下没有文件";
                 body = "切回「全部」看看。";
+                says = "这一栏是空的";
             }
             if (title == null)
             {
@@ -1314,7 +1480,12 @@ namespace Nanally
             mediaEmptyHost.Visibility = Visibility.Visible;
             mediaEmptyTitle.Text = title;
             mediaEmpty.Text = body;
-            mediaEmptyMark.Visibility = warn ? Visibility.Visible : Visibility.Collapsed;
+            mediaEmptyWarn.Visibility = warn ? Visibility.Visible : Visibility.Collapsed;
+            if (mediaEmptyBubble.Text != says)
+            {
+                mediaEmptyBubble.Text = says;
+                Stamp(mediaEmptyBubbleHost, 120, 0.6);
+            }
             mediaEmptyTips.Children.Clear();
             if (tips)
             {
@@ -1796,10 +1967,12 @@ namespace Nanally
                 BindLabel(row.Phase);
                 names.Children.Add(row.Phase);
                 grid.Children.Add(names);
-                row.Track = new Border { Height = 5, CornerRadius = new CornerRadius(2.5), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true };
+                row.Track = new Border { Height = 6, CornerRadius = new CornerRadius(3), VerticalAlignment = VerticalAlignment.Center, ClipToBounds = true };
                 Theme.BindElement(row.Track, BackgroundProperty, "nn.Chip");
-                row.Fill = new Border { Width = 0, CornerRadius = new CornerRadius(2.5), HorizontalAlignment = HorizontalAlignment.Left };
+                row.Fill = new Border { Width = 0, CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left };
                 Theme.BindElement(row.Fill, BackgroundProperty, "nn.Pink");
+                // 还在推送 / 安装时，进度条上的斜纹一直往右走；完成或失败就去掉。
+                row.Fill.Child = new Border { CornerRadius = new CornerRadius(3), Background = RunningStripes() };
                 row.Track.Child = row.Fill;
                 var current = row;
                 row.Track.SizeChanged += delegate { SyncApkRowFill(current); };
@@ -1817,6 +1990,31 @@ namespace Nanally
                 apkRowsHeader.Visibility = targets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             if (apkIdleHint != null)
                 apkIdleHint.Visibility = targets.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        static LinearGradientBrush runningStripes;
+
+        static Brush RunningStripes()
+        {
+            if (runningStripes != null)
+                return runningStripes;
+            var stripe = Color.FromArgb(0x3D, 0xFF, 0xFF, 0xFF);
+            var brush = new LinearGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                SpreadMethod = GradientSpreadMethod.Repeat,
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(6, 6)
+            };
+            brush.GradientStops.Add(new GradientStop(stripe, 0));
+            brush.GradientStops.Add(new GradientStop(stripe, 0.5));
+            brush.GradientStops.Add(new GradientStop(Colors.Transparent, 0.5));
+            brush.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            var shift = new TranslateTransform();
+            brush.Transform = shift;
+            shift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, 12, TimeSpan.FromMilliseconds(800)) { RepeatBehavior = RepeatBehavior.Forever });
+            runningStripes = brush;
+            return brush;
         }
 
         static void SyncApkRowFill(ApkRow row)
@@ -1848,6 +2046,8 @@ namespace Nanally
                 row.Value = 100;
             }
             SyncApkRowFill(row);
+            if (row.State != 0)
+                row.Fill.Child = null;
             if (row.State == 1)
             {
                 Theme.BindElement(row.Fill, BackgroundProperty, "nn.Ok");
@@ -2443,8 +2643,14 @@ namespace Nanally
             Theme.BindElement(footer, BackgroundProperty, "nn.Card");
             ClipRound(footer, 14);
             var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            // 状态前面是吉祥物的小头像，像她在汇报。
+            var speaker = Portrait(22, 6);
+            speaker.VerticalAlignment = VerticalAlignment.Center;
+            speaker.Margin = new Thickness(-4, 0, 10, 0);
+            row.Children.Add(speaker);
             statusText = new TextBlock
             {
                 Text = "连上手机，点一下就拷贝",
@@ -2454,6 +2660,7 @@ namespace Nanally
                 Margin = new Thickness(0, 0, 12, 0)
             };
             statusText.SetResourceReference(TextBlock.ForegroundProperty, "nn.Label");
+            Grid.SetColumn(statusText, 1);
             row.Children.Add(statusText);
             footerRightHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
             footerButtons = new StackPanel { Orientation = Orientation.Horizontal };
@@ -2499,7 +2706,7 @@ namespace Nanally
             apkProgressHost.Children.Add(apkProgressText);
             footerRightHost.Children.Add(apkProgressHost);
 
-            Grid.SetColumn(footerRightHost, 1);
+            Grid.SetColumn(footerRightHost, 2);
             row.Children.Add(footerRightHost);
             footer.Child = row;
             return footer;
@@ -2749,10 +2956,24 @@ namespace Nanally
             var grid = row.Child as Grid;
             var highlight = folder && !string.IsNullOrEmpty(logsHighlight)
                 && string.Equals(full.TrimEnd('\\'), logsHighlight.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            // 刚拷好的那一行：花黄底亮一下再退到 7%，「刚刚」印章砸下来。只在第一次显示时动，之后刷新列表保持静止。
+            var flash = highlight && !string.Equals(logsHighlight, logsHighlightShown, StringComparison.OrdinalIgnoreCase);
             if (highlight)
             {
-                row.Tag = Theme.Selected;
-                row.Background = Theme.Selected;
+                logsHighlightShown = logsHighlight;
+                var tint = new SolidColorBrush(Color.FromArgb(0x12, 0xF6, 0xC9, 0x45));
+                row.Tag = tint;
+                row.Background = tint;
+                if (flash)
+                {
+                    var fade = new ColorAnimation(Color.FromArgb(0x4D, 0xF6, 0xC9, 0x45), Color.FromArgb(0x12, 0xF6, 0xC9, 0x45), TimeSpan.FromMilliseconds(1800))
+                    {
+                        BeginTime = TimeSpan.FromMilliseconds(250),
+                        EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                    };
+                    tint.Color = Color.FromArgb(0x4D, 0xF6, 0xC9, 0x45);
+                    tint.BeginAnimation(SolidColorBrush.ColorProperty, fade);
+                }
             }
 
             var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) };
@@ -2785,7 +3006,11 @@ namespace Nanally
                 TextBlock pillText;
                 var pill = Pill("刚刚", out pillText);
                 pill.Margin = new Thickness(10, 0, 0, 0);
-                PaintPill(pill, pillText, "nn.Pink", "nn.AccentSoft");
+                pill.SetResourceReference(Border.BackgroundProperty, "nn.Petal");
+                pillText.Foreground = B("#2A1E05");
+                pillText.FontWeight = FontWeights.Bold;
+                if (flash)
+                    Stamp(pill, 250, 1.8);
                 nameRow.Children.Add(pill);
             }
             Grid.SetColumn(nameRow, 1);
@@ -2832,9 +3057,27 @@ namespace Nanally
         static UIElement FolderGlyph()
         {
             var host = new Grid { Width = 16, Height = 13, VerticalAlignment = VerticalAlignment.Center };
-            host.Children.Add(new Border { Width = 7, Height = 4, CornerRadius = new CornerRadius(1.5, 1.5, 0, 0), Background = B("#E8B04B"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
-            host.Children.Add(new Border { Height = 10, CornerRadius = new CornerRadius(2), Background = B("#E8B04B"), VerticalAlignment = VerticalAlignment.Bottom });
+            host.Children.Add(new Border { Width = 7, Height = 4, CornerRadius = new CornerRadius(1.5, 1.5, 0, 0), Background = B("#F6C945"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
+            host.Children.Add(new Border { Height = 10, CornerRadius = new CornerRadius(2), Background = B("#F6C945"), VerticalAlignment = VerticalAlignment.Bottom });
             return host;
+        }
+
+        // 印章 / 冒泡：从 from 倍回弹到原大，同时淡入。缩放原点用元素自己的 RenderTransformOrigin（没设就居中）。
+        static void Stamp(FrameworkElement element, int delayMs, double from)
+        {
+            if (element == null)
+                return;
+            var scale = new ScaleTransform(1, 1);
+            if (element.RenderTransformOrigin == new Point(0, 0))
+                element.RenderTransformOrigin = new Point(0.5, 0.5);
+            element.RenderTransform = scale;
+            var begin = TimeSpan.FromMilliseconds(delayMs);
+            var duration = TimeSpan.FromMilliseconds(480);
+            var ease = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 };
+            element.Opacity = 0;
+            element.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)) { BeginTime = begin });
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(from, 1, duration) { BeginTime = begin, EasingFunction = ease });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(from, 1, duration) { BeginTime = begin, EasingFunction = ease });
         }
 
         static UIElement FileGlyph()
@@ -3201,10 +3444,20 @@ namespace Nanally
                 Cursor = Cursors.Hand,
                 Template = DotCheckTemplate()
             };
-            check.Checked += delegate { item.IsChecked = true; PaintDot(check); PaintTile(ring, item, tile.IsMouseOver); UpdateMediaCount(); };
+            var built = false;
+            check.Checked += delegate
+            {
+                item.IsChecked = true;
+                PaintDot(check);
+                PaintTile(ring, item, tile.IsMouseOver);
+                if (built)
+                    TightenRing(ring, check);
+                UpdateMediaCount();
+            };
             check.Unchecked += delegate { item.IsChecked = false; PaintDot(check); PaintTile(ring, item, tile.IsMouseOver); UpdateMediaCount(); };
             check.Loaded += delegate { PaintDot(check); };
             check.IsChecked = item.IsChecked;
+            built = true;
             item.CheckHost = check;
             item.RingHost = ring;
             box.Children.Add(check);
@@ -3261,12 +3514,23 @@ namespace Nanally
             var template = new ControlTemplate(typeof(CheckBox));
             var ring = new FrameworkElementFactory(typeof(Border));
             ring.Name = "Dot";
-            ring.SetValue(FrameworkElement.WidthProperty, 12.0);
-            ring.SetValue(FrameworkElement.HeightProperty, 12.0);
-            ring.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            ring.SetValue(FrameworkElement.WidthProperty, 14.0);
+            ring.SetValue(FrameworkElement.HeightProperty, 14.0);
+            ring.SetValue(Border.CornerRadiusProperty, new CornerRadius(7));
             ring.SetValue(Border.BorderThicknessProperty, new Thickness(1.5));
             ring.SetValue(Border.BorderBrushProperty, B("#E6FFFFFF"));
-            ring.SetValue(Border.BackgroundProperty, B("#66000000"));
+            ring.SetValue(Border.BackgroundProperty, B("#59000000"));
+            ring.SetValue(UIElement.RenderTransformOriginProperty, new Point(0.5, 0.5));
+            var tick = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
+            tick.Name = "Tick";
+            tick.SetValue(System.Windows.Shapes.Path.DataProperty, Geometry.Parse("M2.6,5.6 L4.6,7.6 L8.4,3.4"));
+            tick.SetValue(System.Windows.Shapes.Shape.StrokeThicknessProperty, 1.8);
+            tick.SetValue(System.Windows.Shapes.Shape.StrokeStartLineCapProperty, PenLineCap.Round);
+            tick.SetValue(System.Windows.Shapes.Shape.StrokeEndLineCapProperty, PenLineCap.Round);
+            tick.SetValue(System.Windows.Shapes.Shape.StrokeLineJoinProperty, PenLineJoin.Round);
+            tick.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "nn.OnAccent");
+            tick.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed);
+            ring.AppendChild(tick);
             template.VisualTree = ring;
             return template;
         }
@@ -3278,16 +3542,35 @@ namespace Nanally
             var dot = check.Template.FindName("Dot", check) as Border;
             if (dot == null)
                 return;
-            if (check.IsChecked == true)
+            var tick = check.Template.FindName("Tick", check) as UIElement;
+            var on = check.IsChecked == true;
+            if (on)
             {
                 dot.Background = Theme.Pink;
                 dot.BorderBrush = Theme.Pink;
             }
             else
             {
-                dot.Background = B("#66000000");
+                dot.Background = B("#59000000");
                 dot.BorderBrush = B("#E6FFFFFF");
             }
+            if (tick != null)
+                tick.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        // 勾选：描边从外面 5px 收紧到图片上，勾选点回弹。
+        static void TightenRing(Border ring, CheckBox check)
+        {
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            ring.BeginAnimation(FrameworkElement.MarginProperty, new ThicknessAnimation(new Thickness(-5), new Thickness(0), TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
+            var dot = check.Template == null ? null : check.Template.FindName("Dot", check) as Border;
+            if (dot == null)
+                return;
+            var scale = new ScaleTransform(1, 1);
+            dot.RenderTransform = scale;
+            var pop = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.8 };
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(300)) { EasingFunction = pop });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.4, 1, TimeSpan.FromMilliseconds(300)) { EasingFunction = pop });
         }
 
         static bool IsCheckBox(DependencyObject source)
@@ -3403,12 +3686,25 @@ namespace Nanally
             if (mediaBar != null)
             {
                 var show = picked > 0;
-                if (show && mediaBar.Visibility != Visibility.Visible && mediaBarStatus != null)
+                var appearing = show && mediaBar.Visibility != Visibility.Visible;
+                if (appearing && mediaBarStatus != null)
                 {
                     mediaBarStatus.Text = "";
                     mediaBarStatus.Visibility = Visibility.Collapsed;
                 }
                 mediaBar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                if (appearing)
+                {
+                    var lift = mediaBar.RenderTransform as TranslateTransform;
+                    if (lift == null)
+                    {
+                        lift = new TranslateTransform();
+                        mediaBar.RenderTransform = lift;
+                    }
+                    var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.5 };
+                    lift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(24, 0, TimeSpan.FromMilliseconds(320)) { EasingFunction = spring });
+                    mediaBar.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+                }
             }
             var label = picked > 0 ? "发给自己（" + picked.ToString(CultureInfo.InvariantCulture) + "）" : "发给自己";
             if (sendButton != null)
@@ -4339,9 +4635,9 @@ namespace Nanally
             var stack = new StackPanel { MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left };
             stack.Children.Add(GroupTitle("主题色"));
             var swatches = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
-            swatches.Children.Add(AccentSwatch("Blue", "蓝", "#3794FF"));
-            swatches.Children.Add(AccentSwatch("Pink", "粉", "#EC4899"));
-            swatches.Children.Add(AccentSwatch("Green", "绿", "#22C55E"));
+            swatches.Children.Add(AccentSwatch("Pink", "狐红", "#FF5C84"));
+            swatches.Children.Add(AccentSwatch("Blue", "夜蓝", "#8A97FF"));
+            swatches.Children.Add(AccentSwatch("Green", "薄荷", "#3DD6A5"));
             stack.Children.Add(swatches);
             stack.Children.Add(Divider());
             stack.Children.Add(GroupTitle("外观"));
@@ -4352,7 +4648,7 @@ namespace Nanally
             chkThemeDark = IosSwitch();
             chkThemeDark.Checked += delegate { OnThemeToggled(); };
             chkThemeDark.Unchecked += delegate { OnThemeToggled(); };
-            stack.Children.Add(SwitchRow(chkThemeDark, "暗色", "半透明炭黑色板；打开「跟随系统主题」时不可用"));
+            stack.Children.Add(SwitchRow(chkThemeDark, "暗色", "夜班配色，深底粉字；打开「跟随系统主题」时不可用"));
             chkGlass = IosSwitch();
             chkGlass.Checked += delegate { OnThemeToggled(); };
             chkGlass.Unchecked += delegate { OnThemeToggled(); };
@@ -4377,7 +4673,7 @@ namespace Nanally
             var stack = new StackPanel();
             stack.Children.Add(ring);
             stack.Children.Add(text);
-            var btn = new Button { Content = stack, Width = 56, Cursor = Cursors.Hand, Focusable = false, Tag = key, ToolTip = label + "色" };
+            var btn = new Button { Content = stack, Width = 56, Cursor = Cursors.Hand, Focusable = false, Tag = key, ToolTip = label };
             btn.Template = FlatButtonTemplate(Brushes.Transparent, Brushes.Transparent, 8);
             btn.Click += delegate
             {
@@ -5072,41 +5368,22 @@ namespace Nanally
             applyingTheme = false;
         }
 
+        static readonly FontFamily BadgeFont = new FontFamily("Bahnschrift, Segoe UI Variable Display, Segoe UI");
+        RotateTransform aboutSwing;
+
+        // 关于页是一张挂在挂绳上的工牌：进页面时晃一下，点它再晃。
         Grid BuildAboutPage()
         {
             var page = new Grid();
             Theme.BindElement(page, BackgroundProperty, "nn.Bg");
             var mid = new StackPanel
             {
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                MaxWidth = 640,
-                Margin = new Thickness(40, 20, 40, 40)
-            };
-            var word = new TextBlock
-            {
-                Text = "NANALLY",
-                FontFamily = new FontFamily("Georgia, Palatino Linotype, Times New Roman"),
-                FontSize = 96,
+                VerticalAlignment = VerticalAlignment.Top,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-            word.SetResourceReference(TextBlock.ForegroundProperty, "nn.Ink");
-            mid.Children.Add(word);
-            var tagline = new TextBlock
-            {
-                Text = "把手机里的日志、截图和录屏，轻轻带回来。",
-                FontSize = 13,
-                TextAlignment = TextAlignment.Center,
-                Margin = new Thickness(24, 28, 24, 0)
-            };
-            tagline.SetResourceReference(TextBlock.ForegroundProperty, "nn.Label");
-            mid.Children.Add(tagline);
-            var masks = new StackPanel { Margin = new Thickness(24, 22, 24, 0), HorizontalAlignment = HorizontalAlignment.Center };
-            masks.Children.Add(RevealLine("连上设备，就能把 Logs 拷到你指定的目录。"));
-            masks.Children.Add(RevealLine("截图和录屏可以预览，勾选之后发给自己。"));
-            mid.Children.Add(masks);
+            mid.Children.Add(BuildBadge());
 
-            var versions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 30, 0, 0) };
+            var versions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 22, 0, 0) };
             TextBlock current;
             var currentPill = Pill("当前 " + AppInfo.DisplayVersion, out current);
             txtAboutVersion = current;
@@ -5123,8 +5400,136 @@ namespace Nanally
             btnAboutUpdate.Click += delegate { StartAboutUpdate(); };
             versions.Children.Add(btnAboutUpdate);
             mid.Children.Add(versions);
+            var hint = new TextBlock { Text = "点一下工牌，它会晃", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+            BindLabel(hint);
+            mid.Children.Add(hint);
             page.Children.Add(mid);
             return page;
+        }
+
+        UIElement BuildBadge()
+        {
+            var suit = B("#100A0E");
+            var hang = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Cursor = Cursors.Hand, Background = Brushes.Transparent, RenderTransformOrigin = new Point(0.5, 0) };
+            aboutSwing = new RotateTransform(0);
+            hang.RenderTransform = aboutSwing;
+            hang.MouseLeftButtonUp += delegate { SwingBadge(); };
+
+            var strapText = new TextBlock
+            {
+                Text = "NANALLY · NANALLY",
+                FontFamily = BadgeFont,
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 6),
+                LayoutTransform = new RotateTransform(90)
+            };
+            strapText.SetResourceReference(TextBlock.ForegroundProperty, "nn.OnAccent");
+            var strap = new Border { Width = 26, Height = 74, ClipToBounds = true, Child = strapText };
+            strap.SetResourceReference(Border.BackgroundProperty, "nn.Pink");
+            hang.Children.Add(strap);
+            hang.Children.Add(new Border { Width = 38, Height = 16, CornerRadius = new CornerRadius(5), Background = B("#5A5058"), Margin = new Thickness(0, -2, 0, 0) });
+
+            var badge = new Border { Width = 316, CornerRadius = new CornerRadius(18), BorderThickness = new Thickness(1), Margin = new Thickness(0, -6, 0, 0) };
+            badge.SetResourceReference(Border.BackgroundProperty, "nn.Badge");
+            badge.SetResourceReference(Border.BorderBrushProperty, "nn.Stroke");
+            ClipRound(badge, 18);
+            var body = new StackPanel();
+
+            var band = new Grid { Height = 104, Background = suit };
+            var slot = new Border { Width = 44, Height = 8, CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+            slot.SetResourceReference(Border.BackgroundProperty, "nn.Bg");
+            band.Children.Add(slot);
+            var head = new StackPanel { Margin = new Thickness(22, 22, 22, 0) };
+            head.Children.Add(new TextBlock { Text = "NTE", FontFamily = BadgeFont, FontSize = 12, FontWeight = FontWeights.Bold, Foreground = B("#F4EEF1") });
+            head.Children.Add(new TextBlock { Text = "STAFF · 员工证", FontSize = 10.5, Foreground = B("#A99CA5"), Margin = new Thickness(0, 4, 0, 0) });
+            band.Children.Add(head);
+            band.Children.Add(BadgeFlower());
+            body.Children.Add(band);
+
+            var frame = new Border { Width = 104, Height = 104, CornerRadius = new CornerRadius(26), Padding = new Thickness(4), Margin = new Thickness(0, -58, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+            frame.SetResourceReference(Border.BackgroundProperty, "nn.Badge");
+            frame.Child = Portrait(96, 22);
+            body.Children.Add(frame);
+            var name = new TextBlock { Text = "Nanally", FontFamily = BadgeFont, FontSize = 34, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+            BindInk(name);
+            body.Children.Add(name);
+            var role = new TextBlock { Text = "日志 · 截图 · 安装包　跑腿专员", FontSize = 12.5, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0) };
+            BindLabel(role);
+            body.Children.Add(role);
+
+            var fields = new Grid { Margin = new Thickness(26, 18, 26, 0) };
+            fields.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            fields.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            fields.Children.Add(BadgeField("工号", AppInfo.DisplayVersion, 0));
+            fields.Children.Add(BadgeField("入职", "2026.09", 1));
+            body.Children.Add(fields);
+
+            var foot = new Grid { Margin = new Thickness(26, 18, 26, 20) };
+            var bars = new StackPanel { Orientation = Orientation.Horizontal, Height = 30, HorizontalAlignment = HorizontalAlignment.Left };
+            foreach (var w in new[] { 2, 1, 3, 1, 1, 2, 4, 1, 2, 1, 3, 2, 1, 1, 4, 2, 1, 3, 1, 2, 2, 1, 4, 1, 1, 3, 1, 2 })
+            {
+                var bar = new System.Windows.Shapes.Rectangle { Width = w, Margin = new Thickness(0, 0, 2, 0), Opacity = 0.85 };
+                bar.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "nn.Ink");
+                bars.Children.Add(bar);
+            }
+            foot.Children.Add(bars);
+            var serial = new TextBlock { Text = "NNL-" + AppInfo.Version.Replace(".", "").PadLeft(4, '0'), FontFamily = MonoFont, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
+            BindLabel(serial);
+            foot.Children.Add(serial);
+            body.Children.Add(foot);
+
+            badge.Child = body;
+            hang.Children.Add(badge);
+            return hang;
+        }
+
+        static UIElement BadgeField(string label, string value, int col)
+        {
+            var stack = new StackPanel();
+            var key = new TextBlock { Text = label, FontSize = 10.5 };
+            BindLabel(key);
+            stack.Children.Add(key);
+            var val = new TextBlock { Text = value, FontSize = 13, FontWeight = FontWeights.SemiBold, FontFamily = MonoFont, Margin = new Thickness(0, 3, 0, 0) };
+            BindInk(val);
+            stack.Children.Add(val);
+            Grid.SetColumn(stack, col);
+            return stack;
+        }
+
+        static UIElement BadgeFlower()
+        {
+            var canvas = new Canvas { Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 20, 20, 0) };
+            var petal = B("#F6C945");
+            var centers = new[] { new Point(10, 5), new Point(15, 9), new Point(13, 15), new Point(7, 15), new Point(5, 9) };
+            foreach (var c in centers)
+            {
+                var dot = new System.Windows.Shapes.Ellipse { Width = 7.2, Height = 7.2, Fill = petal };
+                Canvas.SetLeft(dot, c.X - 3.6);
+                Canvas.SetTop(dot, c.Y - 3.6);
+                canvas.Children.Add(dot);
+            }
+            var heart = new System.Windows.Shapes.Ellipse { Width = 4.8, Height = 4.8, Fill = B("#E08A1E") };
+            Canvas.SetLeft(heart, 7.6);
+            Canvas.SetTop(heart, 8.1);
+            canvas.Children.Add(heart);
+            return canvas;
+        }
+
+        // 衰减摆动，绕挂绳顶端，1.8s。
+        void SwingBadge()
+        {
+            if (aboutSwing == null)
+                return;
+            var swing = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(1800) };
+            swing.KeyFrames.Add(new DiscreteDoubleKeyFrame(-8, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            swing.KeyFrames.Add(new EasingDoubleKeyFrame(5.5, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(500)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+            swing.KeyFrames.Add(new EasingDoubleKeyFrame(-3, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(940)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+            swing.KeyFrames.Add(new EasingDoubleKeyFrame(1.2, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1330)), new SineEase { EasingMode = EasingMode.EaseInOut }));
+            swing.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1800)), new SineEase { EasingMode = EasingMode.EaseOut }));
+            aboutSwing.BeginAnimation(RotateTransform.AngleProperty, swing);
         }
 
         void BeginAboutUpdateCheck()
@@ -5229,33 +5634,6 @@ namespace Nanally
             });
         }
 
-        Grid RevealLine(string text)
-        {
-            // 悬停揭示：用模糊代替实色遮罩，开毛玻璃时不会露出深色方块。
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Center, Background = Brushes.Transparent, Cursor = Cursors.Hand };
-            var line = new TextBlock
-            {
-                Text = text,
-                FontSize = 13,
-                TextAlignment = TextAlignment.Center,
-                Opacity = 0.55,
-                Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 6 }
-            };
-            BindInk(line);
-            grid.Children.Add(line);
-            grid.MouseEnter += delegate
-            {
-                line.Effect = null;
-                line.Opacity = 1;
-            };
-            grid.MouseLeave += delegate
-            {
-                line.Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 6 };
-                line.Opacity = 0.55;
-            };
-            return grid;
-        }
-
         static void BindInk(TextBlock block)
         {
             if (block != null)
@@ -5310,7 +5688,7 @@ namespace Nanally
             track.SetValue(Border.HeightProperty, 26.0);
             track.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left);
             track.SetValue(Border.CornerRadiusProperty, new CornerRadius(13));
-            track.SetValue(Border.BackgroundProperty, B("#475569"));
+            track.SetResourceReference(Border.BackgroundProperty, "nn.SwitchOff");
             var knob = new FrameworkElementFactory(typeof(System.Windows.Shapes.Ellipse));
             knob.Name = "Knob";
             knob.SetValue(FrameworkElement.WidthProperty, 22.0);
@@ -5322,6 +5700,7 @@ namespace Nanally
             template.VisualTree = track;
             var on = new Trigger { Property = CheckBox.IsCheckedProperty, Value = true };
             on.Setters.Add(Theme.Dyn(Border.BackgroundProperty, Theme.Pink, "Track"));
+            on.Setters.Add(Theme.Dyn(System.Windows.Shapes.Shape.FillProperty, Theme.OnAccent, "Knob"));
             on.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Right, "Knob"));
             on.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 0, 2, 0), "Knob"));
             template.Triggers.Add(on);

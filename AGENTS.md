@@ -47,13 +47,24 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 | `%LocalAppData%\Nanally\preview` | 缩略图缓存 |
 | `.nanally-send\` | 发送前的临时拉取目录，发完删 |
 
-`AppSettings` 字段：`LogsDir`、`RemoteLogsDir`（手机端日志目录，空 = 默认）、`RemoteLogsHistory`（用过的手机端目录，换行分隔）、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Blue`；Pink/Blue/Green）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）、`ApkUseAdbInstall`（默认 false；true 时走 `adb install -r -t`，false 时走 push+pm）。浅色色板按 `D:\tools\GlassWidgetStyle\README.md`（半透明白卡片、冰蓝强调）。空的会话 ID 保持空，不会回填，也不会去飞书查询。
+`AppSettings` 字段：`LogsDir`、`RemoteLogsDir`（手机端日志目录，空 = 默认）、`RemoteLogsHistory`（用过的手机端目录，换行分隔）、`FeishuAppId`、`FeishuToken`、`FeishuChatId`、`ThemeMode`（默认 `Light`；Dark/Light）、`Accent`（默认 `Pink`；Pink=狐红 / Blue=夜蓝 / Green=薄荷，键名沿用旧的，别改）、`FollowSystem`、`EnableGlass`（默认 true）、`SidebarExpanded`、`ApkUninstallFirst`（默认 false）、`ApkInstallAllDevices`（默认 false，只装选中设备）、`ApkUseAdbInstall`（默认 false；true 时走 `adb install -r -t`，false 时走 push+pm）。色板见下面「界面风格」。空的会话 ID 保持空，不会回填，也不会去飞书查询。
+
+## 界面风格：西装与粉毛（2026-10-31）
+
+从吉祥物身上取：黑西装做底，粉红头发做强调，发卡上的小黄花只给一次性的提醒。效果图在 Claude 设计画布「Nanally 改版效果图」。
+
+- 色板在 `Theme.Apply`。暗色叫夜班（底 `#141116`、卡片 `#1E1A21`、墨 `#F4EEF1`、次要 `#A99CA5`），亮色叫白班（底 `#FBF7F4`、卡片白、墨 `#2B1F28`、次要 `#786872`）。强调色暗色 `#FF5C84` / 亮色 `#D9365E`；`AccentSoft` / `NavHover` / `RowHover` 都由强调色加透明度算出来。
+- 强调色填充上的字和图标用 `nn.OnAccent`：暗色是西装黑 `#1A0D13`，亮色是白。不要再写死 `Brushes.White`（亮粉上的白字对比度不够）。
+- 花黄 `nn.Petal`（`#F6C945`）只用在「刚刚」印章、空状态的「!」和文件夹图标。新 token 还有 `nn.SwitchOff`（开关关闭底）、`nn.EarInner`（耳朵内侧）、`nn.Badge`（工牌底）。
+- 动效：耳朵回弹 0.52s（右耳晚 50ms）；换页 `RisePage` 0.24s 上浮 10px；「刚刚」那行底色 1.8s 从 30% 退到 7%，印章 `Stamp` 回弹，同一个快照只动一次（`logsHighlightShown`）；勾选描边从外 5px 收紧（`TightenRing`）；操作条弹上来；APK 进行中的进度条走斜纹（`RunningStripes`，完成或失败就去掉）；关于页工牌 1.8s 衰减摆动（`SwingBadge`，进页面和点击时）；空状态头像上下浮动，气泡按情况换一句话。
+- 关于页是工牌（`BuildBadge`）：挂绳、黑色抬头写「NTE / STAFF · 员工证」、小黄花、头像、工号 = 版本号、入职 2026.09、条码。文案是苏定的，别自己加字段。
+- 底栏状态前面有 22px 的吉祥物头像。
 
 ## 界面
 
 窗口约 1100×720，`WindowStyle=None`，可缩放。`WindowChrome` 标题高 36，标题栏要能拖；放进标题栏的按钮必须 `WindowChrome.SetIsHitTestVisibleInChrome`。标题栏背景为 null 时点不中，拖不动。
 
-侧栏是图标轨，不是粉胶囊包住「图标+文字」。选中只染 40×40、圆角 10 的图标方块。展开后文字在方块右边，左对齐（`LeftButtonTemplate`）。收起宽 64，展开宽 176。关于页头像也落在同一条 40 宽的列里。侧栏图标是 20×20 网格上的描边 Path（`IconSidebar/IconLogs/IconMedia/IconApk/IconSettings` + `StrokeIcon`），按轮廓区分：侧栏面板 / 文档 / 图片 / 下载到托盘 / 滑杆。不要换回 MDL2 字形（四个方块看不出区别）。侧栏版本号读 `AppInfo.DisplayVersion`。
+侧栏是图标轨，不是粉胶囊包住「图标+文字」。选中只染 40×40、圆角 10 的图标方块，块顶冒出一对狐狸耳朵（`FoxEars` / `PopEars`，悬停右耳抖 `TwitchEar`）。带标签的页面按钮高 48、图标块贴底，上面 8px 是耳朵的位置：耳朵不能用负 Margin 或 RenderTransform 伸出按钮，会被裁掉。展开后文字在方块右边，左对齐（`LeftButtonTemplate`）。收起宽 64，展开宽 176。关于页头像也落在同一条 40 宽的列里。侧栏图标是 20×20 网格上的描边 Path（`IconSidebar/IconLogs/IconMedia/IconApk/IconSettings` + `StrokeIcon`），按轮廓区分：侧栏面板 / 文档 / 图片 / 下载到托盘 / 滑杆。不要换回 MDL2 字形（四个方块看不出区别）。侧栏版本号读 `AppInfo.DisplayVersion`。
 
 顶栏只有一行，没有底卡：设备胶囊（绿点 + 名字 + `USB` / 橙色「未授权」）｜刷新图标按钮｜当前页工具。图标按钮统一用 `IconButton`（32×32，MDL2 字形）。
 
@@ -70,7 +81,7 @@ exe 正在运行时写不进去。先关掉 Nanally 再编译，编完让用户�
 
 滚动条是全局隐式样式，在 `Theme.InstallScrollBars`。跟 Linko 一样：宽 8、圆角、没有箭头。槽用 `CardSoft`，滑块用 `Thumb`（深色 `#3C3C3C`，浅色 `#99A0B0C0`），悬停 `Label`，拖动跟随强调色。不要改回系统白条。模板用 `DynamicResource`，不要把共享刷子塞进 Setter，否则一切换主题又会冻住。
 
-主题刷子是未冻结的，`Theme.Apply` 原地改颜色，已有控件会跟着变。浅色默认走 GlassWidgetStyle；深色为半透明炭黑毛玻璃色板（`#B81C1C1C` 卡片等），配 `Acrylic dark:true`。开启毛玻璃时 `shellBody` 不铺底，侧栏用半透明 `nn.Sidebar` 让 Acrylic 透过来；关毛玻璃时 `shellBody` 仍绑 `nn.Bg`。PrintWindow 截图常把毛玻璃拍成实色，不能据此说透明失败。
+主题刷子是未冻结的，`Theme.Apply` 原地改颜色，已有控件会跟着变。配 `Acrylic dark:true/false`。开启毛玻璃时 `shellBody` 不铺底，侧栏用半透明 `nn.Sidebar` 让 Acrylic 透过来；关毛玻璃时 `shellBody` 仍绑 `nn.Bg`。PrintWindow 截图常把毛玻璃拍成实色，不能据此说透明失败。
 
 ## 两个日志目录（别搞反）
 

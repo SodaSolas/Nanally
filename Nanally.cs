@@ -148,104 +148,117 @@ namespace Nanally
         public static SolidColorBrush OnAccent;
         public static SolidColorBrush Thumb;
         public static SolidColorBrush Ok;
+        public static SolidColorBrush Petal;
+        public static SolidColorBrush SwitchOff;
+        public static SolidColorBrush EarInner;
+        public static SolidColorBrush Badge;
         public static readonly FontFamily Font = new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
         public static readonly FontFamily IconFont = new FontFamily("Segoe MDL2 Assets");
         public static bool Dark;
 
         // Like Linko ThemeManager.EnsureMutableBrushes: create mutable brushes before any window freezes them.
-        // Default bootstrap matches GlassWidgetStyle light (white / ice-blue).
+        // Default bootstrap matches the 白班 (light) palette with the fox-red accent.
         public static void Bootstrap(ResourceDictionary dict)
         {
             if (dict == null)
                 return;
-            Bg = Paint("#E6F2F5F8");
-            Sidebar = Paint("#66FFFFFF");
-            Card = Paint("#B8FFFFFF");
-            CardSoft = Paint("#8CFFFFFF");
-            Menu = Paint("#F2FFFFFF");
-            Ink = Paint("#1C2D42");
-            Label = Paint("#6B7C8F");
-            FieldLabel = Paint("#6B7C8F");
-            Pink = Paint("#4A7FE5");
-            PinkPressed = Paint("#5B8FEA");
-            PinkSoft = Paint("#4A7FE5");
-            AccentSoft = Paint("#334A7FE5");
-            NavHover = Paint("#334A7FE5");
-            Stroke = Paint("#B3A8B8C8");
-            Orange = Paint("#D97706");
-            Red = Paint("#E86A6A");
-            Hairline = Paint("#99FFFFFF");
-            Chip = Paint("#99FFFFFF");
-            ChipHover = Paint("#E6E4E0F5");
-            MenuHover = Paint("#334A7FE5");
-            RowHover = Paint("#8CFFFFFF");
-            Selected = Paint("#334A7FE5");
-            Field = Paint("#F2FFFFFF");
+            Bg = Paint("#EBFBF7F4");
+            Sidebar = Paint("#66F4EDE8");
+            Card = Paint("#CCFFFFFF");
+            CardSoft = Paint("#99FBF4F0");
+            Menu = Paint("#F7FFFFFF");
+            Ink = Paint("#2B1F28");
+            Label = Paint("#786872");
+            FieldLabel = Paint("#786872");
+            Pink = Paint("#D9365E");
+            PinkPressed = Paint("#C22A50");
+            PinkSoft = Paint("#D9365E");
+            AccentSoft = Paint("#1FD9365E");
+            NavHover = Paint("#14D9365E");
+            Stroke = Paint("#33402A3A");
+            Orange = Paint("#B45309");
+            Red = Paint("#D93636");
+            Hairline = Paint("#1A2B1F28");
+            Chip = Paint("#B3FFFFFF");
+            ChipHover = Paint("#E6FBE4EC");
+            MenuHover = Paint("#14D9365E");
+            RowHover = Paint("#0FD9365E");
+            Selected = Paint("#1FD9365E");
+            Field = Paint("#F7FFFFFF");
             OnAccent = Paint("#FFFFFF");
-            Thumb = Paint("#99A0B0C0");
-            Ok = Paint("#16A34A");
+            Thumb = Paint("#99C2AEB8");
+            Ok = Paint("#15803D");
+            Petal = Paint("#F6C945");
+            SwitchOff = Paint("#D8CCD2");
+            EarInner = Paint("#FFB3C6");
+            Badge = Paint("#FFFFFF");
             Mount(dict);
         }
 
+        // 「西装与粉毛」：黑西装做底，狐红做强调，花黄只给一次性的提醒。暗色叫夜班，亮色叫白班。
         public static void Apply(bool dark, string accent)
         {
             Dark = dark;
             if (dark)
             {
-                // Dark frosted glass (translucent charcoal over Acrylic; not opaque Linko slabs)
-                Set(ref Bg, "nn.Bg", "#E6121212");
-                Set(ref Sidebar, "nn.Sidebar", "#66101010");
-                Set(ref Card, "nn.Card", "#B81C1C1C");
-                Set(ref CardSoft, "nn.CardSoft", "#8C222222");
-                Set(ref Menu, "nn.Menu", "#F21A1A1A");
-                Set(ref Ink, "nn.Ink", "#EEEEEE");
-                Set(ref Label, "nn.Label", "#9AA0A6");
-                Set(ref FieldLabel, "nn.FieldLabel", "#B0B0B0");
-                Set(ref Stroke, "nn.Stroke", "#40FFFFFF");
-                Set(ref Hairline, "nn.Hairline", "#33FFFFFF");
-                Set(ref Field, "nn.Field", "#F2181818");
-                Set(ref Chip, "nn.Chip", "#33FFFFFF");
-                Set(ref ChipHover, "nn.ChipHover", "#40FFFFFF");
-                Set(ref Thumb, "nn.Thumb", "#66A0A0A0");
-                Set(ref RowHover, "nn.RowHover", "#28FFFFFF");
-                Set(ref Red, "nn.Red", "#F14C4C");
-                Set(ref Orange, "nn.Orange", "#FFB020");
+                Set(ref Bg, "nn.Bg", "#E6141116");
+                Set(ref Sidebar, "nn.Sidebar", "#66110E13");
+                Set(ref Card, "nn.Card", "#B81E1A21");
+                Set(ref CardSoft, "nn.CardSoft", "#8C26212A");
+                Set(ref Menu, "nn.Menu", "#F21C181F");
+                Set(ref Ink, "nn.Ink", "#F4EEF1");
+                Set(ref Label, "nn.Label", "#A99CA5");
+                Set(ref FieldLabel, "nn.FieldLabel", "#BCAFB7");
+                Set(ref Stroke, "nn.Stroke", "#40FFE6EE");
+                Set(ref Hairline, "nn.Hairline", "#1AFFE6EE");
+                Set(ref Field, "nn.Field", "#F2191519");
+                Set(ref Chip, "nn.Chip", "#24FFE6EE");
+                Set(ref ChipHover, "nn.ChipHover", "#3DFFE6EE");
+                Set(ref Thumb, "nn.Thumb", "#66A898A2");
+                Set(ref Red, "nn.Red", "#FF6B6B");
+                Set(ref Orange, "nn.Orange", "#F6C945");
                 Set(ref Ok, "nn.Ok", "#3DD68C");
+                Set(ref SwitchOff, "nn.SwitchOff", "#3A3138");
+                Set(ref Badge, "nn.Badge", "#221D25");
             }
             else
             {
-                // GlassWidgetStyle light palette (D:\tools\GlassWidgetStyle\README.md)
-                Set(ref Bg, "nn.Bg", "#E6F2F5F8");
-                Set(ref Sidebar, "nn.Sidebar", "#66FFFFFF");
-                Set(ref Card, "nn.Card", "#B8FFFFFF");
-                Set(ref CardSoft, "nn.CardSoft", "#8CFFFFFF");
-                Set(ref Menu, "nn.Menu", "#F2FFFFFF");
-                Set(ref Ink, "nn.Ink", "#1C2D42");
-                Set(ref Label, "nn.Label", "#6B7C8F");
-                Set(ref FieldLabel, "nn.FieldLabel", "#6B7C8F");
-                Set(ref Stroke, "nn.Stroke", "#B3A8B8C8");
-                Set(ref Hairline, "nn.Hairline", "#99FFFFFF");
-                Set(ref Field, "nn.Field", "#F2FFFFFF");
-                Set(ref Chip, "nn.Chip", "#99FFFFFF");
-                Set(ref ChipHover, "nn.ChipHover", "#E6E4E0F5");
-                Set(ref Thumb, "nn.Thumb", "#99A0B0C0");
-                Set(ref RowHover, "nn.RowHover", "#8CFFFFFF");
-                Set(ref Red, "nn.Red", "#E86A6A");
-                Set(ref Orange, "nn.Orange", "#D97706");
-                Set(ref Ok, "nn.Ok", "#16A34A");
+                Set(ref Bg, "nn.Bg", "#EBFBF7F4");
+                Set(ref Sidebar, "nn.Sidebar", "#66F4EDE8");
+                Set(ref Card, "nn.Card", "#CCFFFFFF");
+                Set(ref CardSoft, "nn.CardSoft", "#99FBF4F0");
+                Set(ref Menu, "nn.Menu", "#F7FFFFFF");
+                Set(ref Ink, "nn.Ink", "#2B1F28");
+                Set(ref Label, "nn.Label", "#786872");
+                Set(ref FieldLabel, "nn.FieldLabel", "#786872");
+                Set(ref Stroke, "nn.Stroke", "#33402A3A");
+                Set(ref Hairline, "nn.Hairline", "#1A2B1F28");
+                Set(ref Field, "nn.Field", "#F7FFFFFF");
+                Set(ref Chip, "nn.Chip", "#B3FFFFFF");
+                Set(ref ChipHover, "nn.ChipHover", "#E6FBE4EC");
+                Set(ref Thumb, "nn.Thumb", "#99C2AEB8");
+                Set(ref Red, "nn.Red", "#D93636");
+                Set(ref Orange, "nn.Orange", "#B45309");
+                Set(ref Ok, "nn.Ok", "#15803D");
+                Set(ref SwitchOff, "nn.SwitchOff", "#D8CCD2");
+                Set(ref Badge, "nn.Badge", "#FFFFFF");
             }
-            var pink = accent == "Blue" ? (dark ? "#3794FF" : "#4A7FE5") : accent == "Green" ? (dark ? "#22C55E" : "#16A34A") : (dark ? "#EC4899" : "#DB2777");
-            var hover = accent == "Blue" ? (dark ? "#4DAAF8" : "#5B8FEA") : accent == "Green" ? (dark ? "#4ADE80" : "#15803D") : (dark ? "#F472B6" : "#BE185D");
-            var soft = accent == "Blue" ? (dark ? "#403794FF" : "#334A7FE5") : accent == "Green" ? (dark ? "#4022C55E" : "#3316A34A") : (dark ? "#40EC4899" : "#33DB2777");
-            var nav = accent == "Blue" ? (dark ? "#333794FF" : "#334A7FE5") : accent == "Green" ? (dark ? "#3322C55E" : "#2216A34A") : (dark ? "#33EC4899" : "#22DB2777");
+            // Pink = 狐红（默认），Blue = 夜蓝，Green = 薄荷。暗色下强调色偏亮，填充上写深色字（OnAccent）。
+            var pink = accent == "Blue" ? (dark ? "#8A97FF" : "#4867E0") : accent == "Green" ? (dark ? "#3DD6A5" : "#0F8A68") : (dark ? "#FF5C84" : "#D9365E");
+            var hover = accent == "Blue" ? (dark ? "#A3AEFF" : "#3A57C8") : accent == "Green" ? (dark ? "#5FE0B7" : "#0B7457") : (dark ? "#FF7A9B" : "#C22A50");
+            var rgb = pink.Substring(1);
+            var inner = accent == "Blue" ? (dark ? "#D3D8FF" : "#B9C6F5") : accent == "Green" ? (dark ? "#BDF2E1" : "#9EDCC8") : (dark ? "#FFC2D2" : "#FFB3C6");
             Set(ref Pink, "nn.Pink", pink);
             Set(ref PinkPressed, "nn.PinkPressed", hover);
-            Set(ref AccentSoft, "nn.AccentSoft", soft);
-            Set(ref NavHover, "nn.NavHover", nav);
-            Set(ref MenuHover, "nn.MenuHover", nav);
-            Set(ref Selected, "nn.Selected", soft);
-            Set(ref PinkSoft, "nn.PinkSoft", dark ? "#FFC2DC" : pink);
-            Set(ref OnAccent, "nn.OnAccent", "#FFFFFF");
+            Set(ref AccentSoft, "nn.AccentSoft", (dark ? "#29" : "#1F") + rgb);
+            Set(ref NavHover, "nn.NavHover", (dark ? "#1F" : "#14") + rgb);
+            Set(ref MenuHover, "nn.MenuHover", (dark ? "#1F" : "#14") + rgb);
+            Set(ref Selected, "nn.Selected", (dark ? "#29" : "#1F") + rgb);
+            Set(ref RowHover, "nn.RowHover", (dark ? "#12" : "#0F") + rgb);
+            Set(ref PinkSoft, "nn.PinkSoft", inner);
+            Set(ref EarInner, "nn.EarInner", inner);
+            Set(ref OnAccent, "nn.OnAccent", dark ? "#1A0D13" : "#FFFFFF");
+            Set(ref Petal, "nn.Petal", "#F6C945");
         }
 
         public static bool SystemIsDark()
@@ -296,6 +309,10 @@ namespace Nanally
             Put(dict, "nn.OnAccent", OnAccent);
             Put(dict, "nn.Thumb", Thumb);
             Put(dict, "nn.Ok", Ok);
+            Put(dict, "nn.Petal", Petal);
+            Put(dict, "nn.SwitchOff", SwitchOff);
+            Put(dict, "nn.EarInner", EarInner);
+            Put(dict, "nn.Badge", Badge);
             InstallScrollBars(dict);
         }
 
@@ -358,6 +375,10 @@ namespace Nanally
             if (ReferenceEquals(brush, OnAccent)) return "nn.OnAccent";
             if (ReferenceEquals(brush, Thumb)) return "nn.Thumb";
             if (ReferenceEquals(brush, Ok)) return "nn.Ok";
+            if (ReferenceEquals(brush, Petal)) return "nn.Petal";
+            if (ReferenceEquals(brush, SwitchOff)) return "nn.SwitchOff";
+            if (ReferenceEquals(brush, EarInner)) return "nn.EarInner";
+            if (ReferenceEquals(brush, Badge)) return "nn.Badge";
             return null;
         }
 
@@ -433,8 +454,8 @@ namespace Nanally
 
     static class AppInfo
     {
-        public const string Version = "1.0.4";
-        public const string DisplayVersion = "v1.0.4";
+        public const string Version = "1.0.5";
+        public const string DisplayVersion = "v1.0.5";
         /// <summary>默认更新源：GitHub owner/repo，对应 Releases。</summary>
         public const string DefaultUpdateRepo = "SodaSolas/Nanally";
     }
@@ -755,7 +776,7 @@ namespace Nanally
                     return;
                 var source = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
                 if (source != null && source.CompositionTarget != null)
-                    source.CompositionTarget.BackgroundColor = glass ? Colors.Transparent : (dark ? Colors.Black : Color.FromRgb(0xF2, 0xF5, 0xF8));
+                    source.CompositionTarget.BackgroundColor = glass ? Colors.Transparent : (dark ? Colors.Black : Color.FromRgb(0xFB, 0xF7, 0xF4));
                 int mode = dark ? 1 : 0;
                 DwmSetWindowAttribute(hwnd, 19, ref mode, 4);
                 DwmSetWindowAttribute(hwnd, DwmWaUseImmersiveDarkMode, ref mode, 4);
@@ -1688,6 +1709,7 @@ namespace Nanally
         bool applyingTheme;
         readonly List<MediaItem> mediaItems = new List<MediaItem>();
         string logsHighlight;
+        string logsHighlightShown;
 
         public MainWindow()
         {
